@@ -8,7 +8,8 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QSettings, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QFontDatabase, QGuiApplication, QPalette
+from PySide6.QtGui import (QColor, QFont, QFontDatabase, QGuiApplication, QIcon,
+                           QPalette)
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QFileDialog, QFrame,
                                QGridLayout, QHBoxLayout, QLabel, QLineEdit,
                                QMainWindow, QMessageBox, QPlainTextEdit,
@@ -201,9 +202,11 @@ class Inspector(QWidget):
         modes.setSpacing(6)
         self.mode_keys = _button("Shortcut", checkable=True)
         self.mode_media = _button("Media key", checkable=True)
+        self.mode_none = _button("Nothing", checkable=True)
+        self.mode_none.setToolTip("Make this control do nothing at all")
         self.mode_group = QButtonGroup(self)
         self.mode_group.setExclusive(True)
-        for i, b in enumerate((self.mode_keys, self.mode_media)):
+        for i, b in enumerate((self.mode_keys, self.mode_media, self.mode_none)):
             self.mode_group.addButton(b, i)
             modes.addWidget(b)
         modes.addStretch()
@@ -239,9 +242,12 @@ class Inspector(QWidget):
                 self.media_group.addButton(b, [m for m, _ in core.MEDIA].index(mid))
                 self.media_buttons[mid] = b
                 ml.addWidget(b, r, col)
-        self.pages = (kp, mp)
+        np_ = _label("Pressing or turning it will do nothing. Handy for a key "
+                     "you keep hitting by accident.", "dim", wrap=True)
+        self.pages = (kp, mp, np_)
         ev.addWidget(kp)
         ev.addWidget(mp)
+        ev.addWidget(np_)
 
         ev.addSpacing(10)
         actions = QHBoxLayout()
@@ -325,7 +331,12 @@ class Inspector(QWidget):
             self.onpad_why.hide()
 
         shown = desired or (None if entry.unknown else entry.binding)
-        if shown is not None and shown.media:
+        if shown is not None and shown.none:
+            self.mode_none.setChecked(True)
+            self._page(2)
+            self.keys_edit.clear()
+            self._clear_media()
+        elif shown is not None and shown.media:
             self.mode_media.setChecked(True)
             self._page(1)
             self.media_buttons[shown.media].setChecked(True)
@@ -357,6 +368,8 @@ class Inspector(QWidget):
 
     def _mode(self, i):
         self._page(i)
+        if i == 2 and not self._loading and self.control is not None:
+            self.changed.emit(self.control, core.Binding(none=True))
         if i == 0 and self.record.isChecked():
             self.keys_edit.setFocus()
 
@@ -484,7 +497,7 @@ class Window(QMainWindow):
             elif e.unknown:
                 looks[c] = Look("", known=False)
             else:
-                looks[c] = Look(e.binding.label(), known=True)
+                looks[c] = Look(e.binding.label(), known=True, quiet=e.binding.none)
         self.pad.set_looks(looks)
 
         n = len(pending)
@@ -569,7 +582,10 @@ class Window(QMainWindow):
 
         if len(done) == 1:
             c, b = done[0]
-            self._say(f"{core.control_name(c)} is now {b.label()}.", GOOD)
+            if b.none:
+                self._say(f"{core.control_name(c)} now does nothing.", GOOD)
+            else:
+                self._say(f"{core.control_name(c)} is now {b.label()}.", GOOD)
         else:
             self._say(f"Wrote {len(done)} changes to the pad.", GOOD)
         self._refresh()
@@ -637,10 +653,17 @@ def apply_theme(app):
     app.setStyleSheet(STYLE)
 
 
+ICON = Path(__file__).resolve().parent.parent / "packaging" / "macropad.svg"
+
+
 def run():
     app = QApplication(sys.argv)
     app.setApplicationName("macropad")
     app.setDesktopFileName("macropad")
+    # The launcher gives Plasma the icon; this covers the window itself, X11
+    # sessions, and running straight from a git checkout.
+    if ICON.exists():
+        app.setWindowIcon(QIcon(str(ICON)))
     apply_theme(app)
     w = Window()
     w.resize(1000, 800)

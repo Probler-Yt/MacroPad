@@ -163,6 +163,16 @@ def scene_media():
     save(w, "step-media")
 
 
+def scene_nothing():
+    b = dict(DEMO)
+    b["key1"] = B(none=True)
+    w = window(bindings=b)
+    w.desired["key5"] = B(none=True)
+    select(w, "key5")
+    w._refresh()
+    save(w, "step-nothing")
+
+
 def scene_pending():
     w = window(bindings={k: v for k, v in DEMO.items()
                          if k not in ("key2", "key6", "key10")})
@@ -218,8 +228,9 @@ def scene_unsupported():
         detail=["So far only 1189:8840 (12 keys, 2 dials) has been worked out. "
                 "Pads in this family differ in layout and protocol, so writing to "
                 "yours with the wrong one could fail or scramble it. The app won't try.",
-                "You can help add it: the README's \"Other pads\" section shows how "
-                "to capture what the vendor software sends."])
+                "ch57x-keyboard-tool, a command line tool, supports several of these "
+                "pads today. To get yours into this app, the README's \"Other pads\" "
+                "section shows how to capture what the vendor software sends."])
     w = window(diag=d)
     save(w, "unsupported")
 

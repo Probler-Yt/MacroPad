@@ -144,6 +144,7 @@ class Binding:
         Binding(keys="ctrl+c")
         Binding(keys="a,b,c", delay=50)
         Binding(media="volumeup")
+        Binding(none=True)          the control does nothing
 
     The kind is explicit rather than guessed from the string, because
     'pause' is both a keyboard key and a media key.
@@ -151,17 +152,18 @@ class Binding:
     keys: str = ""
     media: str = ""
     delay: int = 0
+    none: bool = False
 
     def validate(self):
-        if bool(self.keys) == bool(self.media):
-            raise ValueError("a binding is either keys or media, not both or neither")
+        if sum(map(bool, (self.keys, self.media, self.none))) != 1:
+            raise ValueError("a binding is exactly one of keys, media or nothing")
         if self.media and self.media not in proto.MEDIA_KEYS:
             raise ValueError(f"unknown media key '{self.media}'")
         if self.keys:
             proto.parse_keystroke(self.keys)        # raises ValueError
         if not 0 <= self.delay <= 0xFFFF:
             raise ValueError("delay must be 0-65535 ms")
-        if self.media and self.delay:
+        if self.delay and not self.keys:
             raise ValueError("delay only applies to key sequences")
         return self
 
@@ -169,9 +171,18 @@ class Binding:
     def steps(self):
         return len(proto.parse_keystroke(self.keys)) if self.keys else 1
 
+    @property
+    def is_nothing(self):
+        return self.none
+
     def reports(self, report_id, action, layer=1):
         """The exact reports to send, built entirely by macropad.py."""
         self.validate()
+        if self.none:
+            # A keystroke with no modifier and no key: count 0, pair 00 00.
+            # This is ch57x-keyboard-tool's encoding for a modifier-only key,
+            # with no modifier. Needs confirming on hardware (see README).
+            return proto.native_key(report_id, action, [(0, 0)], layer, 0)
         if self.media:
             return proto.native_media(report_id, action,
                                       proto.MEDIA_KEYS[self.media], layer)
@@ -185,12 +196,16 @@ class Binding:
 
     def label(self):
         """What a person reads on the key: 'Ctrl+Shift+N', 'Volume up'."""
+        if self.none:
+            return "Nothing"
         if self.media:
             return MEDIA_LABEL.get(self.media, self.media)
         text = ", ".join(pretty_step(s) for s in self.keys.split(",") if s.strip())
         return text + (f" ({self.delay} ms)" if self.delay else "")
 
     def to_json(self):
+        if self.none:
+            return {"none": True}
         if self.media:
             return {"media": self.media}
         d = {"keys": self.keys}
@@ -201,7 +216,8 @@ class Binding:
     @classmethod
     def from_json(cls, d):
         return cls(keys=d.get("keys", ""), media=d.get("media", ""),
-                   delay=int(d.get("delay", 0))).validate()
+                   delay=int(d.get("delay", 0)),
+                   none=bool(d.get("none", False))).validate()
 
 
 # ------------------------------------------------------------------- files
@@ -426,8 +442,10 @@ def diagnose(keyd=True):
                     "worked out. Pads in this family differ in layout and "
                     "protocol, so writing to yours with the wrong one could "
                     "fail or scramble it. The app won't try.",
-                    "You can help add it: the README's \"Other pads\" section "
-                    "shows how to capture what the vendor software sends."],
+                    "ch57x-keyboard-tool, a command line tool, supports several "
+                    "of these pads today. To get yours into this app, the "
+                    "README's \"Other pads\" section shows how to capture what "
+                    "the vendor software sends."],
             warnings=warnings)
 
     if not found:
@@ -569,6 +587,12 @@ def decode_config(report):
     if kind == proto.KeyType.MULTIMEDIA:
         media = _MEDIA_BY_USAGE.get(report[11] | (report[12] << 8))
         return (control, layer, Binding(media=media)) if media else None
+
+    if kind == proto.KeyType.BASIC and count == 0:
+        mods, code = report[11], report[12]
+        if not mods and not code:
+            return control, layer, Binding(none=True)
+        return None
 
     if kind == proto.KeyType.BASIC and count:
         steps = []

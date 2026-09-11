@@ -43,6 +43,7 @@ class Look:
     text: str = ""           # what's on the pad, or will be once written
     known: bool = False
     pending: bool = False
+    quiet: bool = False      # known, but does nothing: legend drawn dimmed
 
 
 def _key_grid(orientation):
@@ -268,7 +269,7 @@ class PadView(QWidget):
         if look.pending:
             p.setPen(TAPE)
         else:
-            p.setPen(INK if look.known else INK_DIM)
+            p.setPen(INK if look.known and not look.quiet else INK_DIM)
         text = look.text if (look.known or look.pending) else "Unknown"
         body = rect.adjusted(8, 22, -8, -10)
         # Let 'Meta+Ctrl+Left' break after a '+' instead of being cut off.
@@ -379,7 +380,8 @@ class PadView(QWidget):
         f = QFont(self.font())
         f.setPixelSize(12)
         p.setFont(f)
-        p.setPen(TAPE if look.pending else (INK if look.known else INK_DIM))
+        p.setPen(TAPE if look.pending else
+                 (INK if look.known and not look.quiet else INK_DIM))
         text = look.text if (look.known or look.pending) else "Unknown"
         body = rect.adjusted(22, 0, -26, 0)
         p.drawText(body, Qt.AlignLeft | Qt.AlignVCenter,

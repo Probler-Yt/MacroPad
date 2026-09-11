@@ -45,11 +45,15 @@
 
 I left Windows.
 
-It went fine. Games ran. My editor ran. Everything I cared about had a Linux version or a good replacement. Then I picked up the little AliExpress macro pad on my desk, the one with twelve keys and two knobs, and realised the only way to change what its keys do was a Windows program called `MINI_KEYBOARD.exe` that looks like it was designed during a power cut.
+It went fine. Games ran. My editor ran. Everything I cared about had a Linux version or a good replacement. Then I picked up the little AliExpress macro pad on my desk, the one with twelve keys and two knobs, and remembered that the software it came with is a Windows program called `MINI_KEYBOARD.exe` that looks like it was designed during a power cut.
 
 People online were running **entire Windows virtual machines** just to change one key. Others kept a Windows partition alive for it. That is a lot of Windows for a thing that costs less than a pizza.
 
-So I sat down with the vendor's software, the Linux kernel's USB sniffer, and a lot of stubbornness, and worked out exactly what bytes that program sends to the pad. Then I built the program I actually wanted:
+So I sat down with the vendor's software, the Linux kernel's USB sniffer, and a lot of stubbornness, and worked out exactly what bytes that program sends to the pad.
+
+Once it worked, I found out I wasn't the first. **[ch57x-keyboard-tool](https://github.com/kriomant/ch57x-keyboard-tool)** has handled these pads from the command line since 2023, on Linux, macOS and Windows, and it's excellent. If you're happy editing a YAML file and running a command, go and use it.
+
+But I wanted something a friend on their first week of Linux could use without ever seeing a config file. So this is the other half, the program I actually wanted:
 
 - **It looks like your pad.** You click on a drawing of the real thing, not a settings list.
 - **It's honest.** The pad can't tell anyone what's on it, so the app never pretends to know.
@@ -78,7 +82,7 @@ Bus 001 Device 011: ID 1189:8840 Acer Communications & Multimedia USB Composite 
 The important bit is **`1189:8840`**. Don't worry about the "Acer" part: it isn't made by Acer, these pads just borrow that ID.
 
 > [!NOTE]
-> **Different number, like `1189:8890` or `1189:8830`?** That's a sibling of this pad with a different layout. The app will spot it and tell you it isn't supported yet, rather than risk sending it the wrong thing. [You can help add it!](#-other-pads-in-this-family)
+> **Different number, like `1189:8890` or `1189:8842`?** That's a sibling of this pad with a different layout. MacroPad will spot it and tell you it isn't supported yet, rather than risk sending it the wrong thing. [ch57x-keyboard-tool](https://github.com/kriomant/ch57x-keyboard-tool) supports several of them today, and [you can help add yours here](#-other-pads-in-this-family).
 
 ---
 
@@ -89,6 +93,7 @@ The important bit is **`1189:8840`**. Don't worry about the "Acer" part: it isn'
 | 🎹 **Click the drawing** | The window shows your pad as it really is. Click a key, or any part of a knob (turn left, press, turn right). |
 | ⌨️ **Keyboard shortcuts** | Anything like `Ctrl+C`, `Ctrl+Shift+T`, `Meta+Ctrl+Right`, `F5`. Type it or press **Record** and just do the combo. |
 | 🎵 **Media keys** | Play/pause, next, previous, stop, volume, mute, **screen brightness**, calculator, email, browser, my computer. |
+| 🚫 **Nothing** | Switch a key off completely, so a stray press does nothing. |
 | 🔄 **Rotate view** | Stand your pad up or lay it flat. The drawing turns to match. |
 | 🧠 **Remembers what it wrote** | The pad can't be read back, so the app keeps its own notes and marks anything it doesn't know. |
 | 🩺 **Tells you what's wrong** | Unplugged? No permission? Wrong pad? You get a plain explanation and the exact fix, with a copy button. |
@@ -106,6 +111,25 @@ The important bit is **`1189:8840`**. Don't worry about the "Acer" part: it isn'
 - **Selected**: the orange outline is the one you're editing.
 
 The tiny `0x04` in each corner is that key's **action byte**, the number the pad uses for it internally. You can ignore it forever. It's there for anyone [adding support for another pad](#-other-pads-in-this-family).
+
+### MacroPad or ch57x-keyboard-tool?
+
+Both write straight to the pad's own memory, so you can even use both. Pick whichever suits you:
+
+| | MacroPad | [ch57x-keyboard-tool](https://github.com/kriomant/ch57x-keyboard-tool) |
+|---|---|---|
+| How you use it | Click a drawing of your pad | Write a YAML file, run a command |
+| Pads | `1189:8840` (12 keys, 2 knobs) | `1189:8840`, `8842`, `8890`, several layouts |
+| Systems | Linux | Linux, macOS, Windows |
+| Shortcuts and media keys | Yes | Yes |
+| Key sequences with delays | Not yet | Yes |
+| Mouse actions, LED modes, extra layers | Not yet | Yes |
+| Record a shortcut by pressing it | Yes | No |
+| Install and permissions | One line does both | AUR, a download or `cargo install`; rule by hand |
+
+**Short version:** new to Linux, or just want to click things? MacroPad. Want every feature, a different pad, or a config file you can keep in git? ch57x-keyboard-tool.
+
+Other people have built GUIs for these pads too, mostly for the smaller 3 and 6 key models, including one that runs in a web browser. You'll find them under the [ch57x topic on GitHub](https://github.com/topics/ch57x). The more of these there are, the fewer people are stuck running Windows for a macro pad.
 
 ---
 
@@ -218,6 +242,14 @@ Click **Media key** and pick from the list. Volume and brightness on the knobs i
 
 <p align="center">
   <img src="docs/images/step-media.png" width="820" alt="Choosing Volume down for dial 1 turn left from the list of media keys">
+</p>
+
+### Or make it do nothing
+
+Bound something you don't want any more? Click **Nothing**, then write it. The key goes quiet: pressing it does nothing at all. Keys set this way show **Nothing** in grey on the drawing.
+
+<p align="center">
+  <img src="docs/images/step-nothing.png" width="820" alt="Key 5 set to Nothing, waiting to be written, with key 1 already showing Nothing in grey">
 </p>
 
 ### 3. Write it to the pad
@@ -386,9 +418,12 @@ A few ideas for KDE Plasma, where these are the default shortcuts:
 
 ## 🧬 Other pads in this family
 
-This app is **confirmed on `1189:8840`**, the 12 key, 2 knob pad. It's the only one anyone has captured so far.
+This app is **confirmed on `1189:8840`**, the 12 key, 2 knob pad. It's the only one it knows so far.
 
-Siblings come in other sizes (the original Windows project was built around a 3 key, 1 knob version), and several share vendor ID `1189`. The original Windows project this work builds on lists `1189:8890`, `8830`, `8831`, `8832`, `8897` and `8874`. **They don't all speak the same language.** This pad alone turned out to differ from the documented protocol in four separate places (see [the findings](#what-we-found)), and none of those could have been guessed. That's why the app won't write to a pad it doesn't know.
+> [!TIP]
+> **Have a different pad right now?** [ch57x-keyboard-tool](https://github.com/kriomant/ch57x-keyboard-tool) supports `1189:8840`, `1189:8842` and `1189:8890` in several layouts (3, 6, 9, 12 and 15 keys) from the command line, today.
+
+Siblings come in other sizes, and several share vendor ID `1189`. **They don't all speak the same language:** ch57x-keyboard-tool has separate code for different families, and rOzzy1987's Windows project lists yet more IDs (`8830`, `8831`, `8832`, `8897`, `8874`) with their own formats. That's why MacroPad won't write to a pad it doesn't know.
 
 <p align="center">
   <img src="docs/images/unsupported.png" width="820" alt="The app explaining that it found a 1189:8890 pad that it doesn't support yet">
@@ -396,7 +431,7 @@ Siblings come in other sizes (the original Windows project was built around a 3 
 
 ### You can add yours
 
-If you have a different pad, you're exactly who this project needs, and it's the same process that cracked this one. You'll need the vendor software (`MINI_KEYBOARD.exe`) and Wine.
+If you'd like your pad in MacroPad too, you're exactly who this project needs. It's the same process used for this one. You'll need the vendor software (`MINI_KEYBOARD.exe`) and Wine.
 
 #### Capture what the vendor software sends
 
@@ -427,7 +462,7 @@ If you have a different pad, you're exactly who this project needs, and it's the
 
 ## 🪟 What about Windows?
 
-Windows already has the vendor app, ugly as it is. **Linux is the gap, so Linux comes first.**
+Windows already has the vendor app, ugly as it is, and [ch57x-keyboard-tool](https://github.com/kriomant/ch57x-keyboard-tool) runs there too. **A friendly app on Linux was the gap, so Linux comes first.**
 
 That said, the app is built on Qt, which runs on Windows and macOS too. The only Linux specific parts are the small pieces that talk to USB and check permissions. Swapping it for a cross platform one is on the [roadmap](#-roadmap), and once that's tested on real hardware, one app will work everywhere. If you'd like to help test on Windows, open an issue.
 
@@ -441,7 +476,9 @@ That said, the app is built on Qt, which runs on Windows and macOS too. The only
 1. **Probe.** `macropad-probe.py` walks `/sys/class/hidraw` and decodes each HID report descriptor. The pad shows up as two interfaces: a normal keyboard (`Generic Desktop`) and a vendor defined one (usage page `0xff00`) with a 64 byte input and output report, ID 3. That's the config channel.
 2. **Guess.** The upstream project documents two protocols, "Legacy" and "Extended". Both were tried. The pad accepted the reports and then quietly ignored them. Educated guessing had run out.
 3. **Watch.** The breakthrough was noticing `MINI_KEYBOARD.exe` runs under Wine. Linux's `usbmon` can record every USB transfer, so `macropad-capture.py` watched the real software write a single key. Twenty minutes of watching beat hours of guessing.
-4. **Repeat.** Separate captures of the knobs and of media keys each turned up something new. Every packet from every capture is now replayed by the test suite.
+4. **Repeat.** Separate captures of the knobs and of media keys filled in the rest. Every packet from every capture is now replayed by the test suite.
+
+Lesson learned the hard way: [ch57x-keyboard-tool](https://github.com/kriomant/ch57x-keyboard-tool) had already worked out most of this, and its source is the best reference for these pads. Search before you sniff.
 
 </details>
 
@@ -456,7 +493,7 @@ Every binding is two 65 byte writes to `/dev/hidrawN`: a config report, then a c
 │  │  │  │  │     │      │    │  └───── modifier bitmask
 │  │  │  │  │     │      │    └──────── count
 │  │  │  │  │     │      └───────────── unused
-│  │  │  │  │     └──────────────────── delay, little endian (not yet verified)
+│  │  │  │  │     └──────────────────── delay? (unverified, see below)
 │  │  │  │  └────────────────────────── type: 1 keys, 2 media, 3 mouse, 8 LED
 │  │  │  └───────────────────────────── layer, counted from 1
 │  │  └──────────────────────────────── action: which control
@@ -484,20 +521,26 @@ Every binding is two 65 byte writes to `/dev/hidrawN`: a config report, then a c
 
 The vendor app sometimes sends several configs and one commit at the end. Both styles work. This app commits after every binding, so it always knows exactly which ones landed.
 
+**Delays** are the open question. The byte field above comes from rOzzy1987's format and hasn't been seen on this pad. ch57x-keyboard-tool sends a delay as a separate report of type `5` instead, which is probably right. That's why sequences are switched off in the app until a capture settles it.
+
 </details>
 
 <a name="what-we-found"></a>
 <details>
-<summary><b>What we found (and what upstream had different)</b></summary>
+<summary><b>Three sources, compared</b></summary>
 
-| | Upstream "Extended" | 1189:8840 |
-|---|---|---|
-| Magic byte | `0xFE` | **`0xFD`** |
-| First layer | `0` | **`1`** (layer 0 is accepted, then silently thrown away) |
-| First knob action | `13` (derived) | **`0x10`** (keys get 1 to 15, knobs start on the next hex boundary) |
-| Media packing | leading zero, usage at offset 12, count from payload | **count `2`, usage at offset 11** |
+What each source sends to a `1189:8840`. The pad accepts the ch57x-keyboard-tool style and the vendor style, so it's evidently tolerant. Nothing here is a new discovery about the hardware; the last column is simply what the vendor's own software does, captured independently.
 
-None of these were guessable. Each one was found by watching the real software.
+| | rOzzy1987 "Extended" | [ch57x-keyboard-tool](https://github.com/kriomant/ch57x-keyboard-tool) | Vendor app (captured) |
+|---|---|---|---|
+| Byte 1 of a config report | `0xFE` | `0xFE` | **`0xFD`** |
+| Layers counted from | `0` | `1` | `1` |
+| First knob action | `13` | `0x10` | `0x10` |
+| Media: count, usage offset | from payload, 12 | `0`, 11 | **`2`**, 11 |
+| Delay | bytes 5 and 6 | separate report, type `5` | not captured yet |
+| Finishing a write | flash command | `aa aa`, `fd fe ff`, `aa aa` | `fd fe ff` |
+
+rOzzy1987's format is for different product IDs, which is why porting it to this pad failed until the capture.
 
 </details>
 
@@ -604,7 +647,8 @@ tests/                   real captures and the tests that replay them
 - [x] Both knobs, all three actions each
 - [x] Upright and flat views
 - [x] One line installer for any distro
-- [ ] **Key sequences with delays** (waiting on one more capture to verify the format)
+- [ ] **Key sequences with delays** (ch57x-keyboard-tool shows the likely format; one capture to confirm)
+- [ ] Layers 2 and 3, and LED modes
 - [ ] AUR package, so Arch users can install it like anything else
 - [ ] Knob press to toggle brightness between 0% and 100%
 - [ ] Save and switch between named profiles (gaming, editing, streaming)
@@ -615,7 +659,8 @@ tests/                   real captures and the tests that replay them
 
 ## 🙏 Credits
 
-- **[rOzzy1987/MacroPad](https://github.com/rOzzy1987/MacroPad)**, whose Windows project did the original reverse engineering this whole thing stands on. Go give it a star.
+- **[kriomant/ch57x-keyboard-tool](https://github.com/kriomant/ch57x-keyboard-tool)**, the MIT licensed command line tool that has supported these pads since 2023. It does more than MacroPad does today (layers, sequences, mouse, LEDs, more pads, every OS), and its source is the best reference there is. Go give it a star.
+- **[rOzzy1987/MacroPad](https://github.com/rOzzy1987/MacroPad)**, whose Windows project this app's protocol code started from.
 - Everyone on forums who documented running a whole VM to change a key. Your suffering was noted.
 
 ## ⚖️ Licence

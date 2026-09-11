@@ -158,7 +158,7 @@ Name=MacroPad
 GenericName=Macro pad configurator
 Comment=Change what your macro pad's keys and dials do
 Exec=$BIN/macropad
-Icon=macropad
+Icon=$ICON
 Terminal=false
 Categories=Utility;Settings;HardwareSettings;
 Keywords=macro;keyboard;keypad;knob;dial;shortcut;hid;
@@ -166,6 +166,8 @@ StartupWMClass=macropad
 EOF
 command -v update-desktop-database >/dev/null && update-desktop-database -q "$(dirname "$DESKTOP")" 2>/dev/null || true
 command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1 || true
+# Plasma caches icon lookups; drop the cache so the new icon shows straight away.
+rm -f "${XDG_CACHE_HOME:-$HOME/.cache}/icon-cache.kcache" 2>/dev/null || true
 ok "MacroPad is in your app menu"
 
 # -------------------------------------------------------------- 4. permission

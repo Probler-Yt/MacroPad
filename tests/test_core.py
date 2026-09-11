@@ -141,6 +141,21 @@ class BindingModel(unittest.TestCase):
         self.assertEqual(core.Binding(keys="super+pageup").label(), "Meta+Page Up")
         self.assertEqual(core.Binding(media="mycomputer").label(), "My computer")
 
+    def test_nothing(self):
+        b = core.Binding(none=True).validate()
+        config, commit = b.reports(3, 0x04)
+        # type 1 (keys), count 0, empty pair: press nothing
+        self.assertEqual(config[:14].hex(" "), "03 fd 04 01 01 00 00 00 00 00 00 00 00 00")
+        self.assertEqual(commit[:4], b"\x03\xfd\xfe\xff")
+        self.assertFalse(any(config[11:]))
+        self.assertEqual(b.label(), "Nothing")
+        self.assertEqual(core.Binding.from_json(b.to_json()), b)
+        self.assertEqual(core.decode_config(config), ("key4", 1, b))
+        for bad in (core.Binding(none=True, keys="a"), core.Binding(none=True, media="mute"),
+                    core.Binding(none=True, delay=5)):
+            with self.assertRaises(ValueError):
+                bad.validate()
+
     def test_pause_is_unambiguous(self):
         key = core.Binding(keys="pause").reports(3, 1)[0]
         media = core.Binding(media="pause").reports(3, 1)[0]
@@ -293,5 +308,11 @@ class GuiSmoke(unittest.TestCase):
                 self.assertEqual(w.inspector.title.text(), core.control_name(c))
             w._changed("key1", core.Binding(media="mute"))
             self.assertEqual(w._pending(), ["key1"])
+            # choosing Nothing marks the control as changed straight away
+            w.pad.select("key5")
+            w._refresh()
+            w.inspector.mode_none.click()
+            self.assertEqual(w.desired.get("key5"), core.Binding(none=True))
+            self.assertIn("key5", w._pending())
             w.desired.clear()
             w.close()
