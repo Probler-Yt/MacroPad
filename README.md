@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/images/icon.png" width="112" alt="Macropad app icon: a macro pad with two dials and one orange key">
+  <img src="docs/images/icon.png" width="112" alt="MacroPad app icon: a macro pad with two dials and one orange key">
 </p>
 
-<h1 align="center">Macropad</h1>
+<h1 align="center">MacroPad</h1>
 
 <p align="center">
   <b>Set up your cheap 12 key, 2 knob USB macro pad on Linux.</b><br>
@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/hero.png" width="860" alt="Macropad on Linux: a drawing of the 12 key, 2 knob macro pad with every key labelled, and a panel for changing the selected key">
+  <img src="docs/images/hero.png" width="860" alt="MacroPad on Linux: a drawing of the 12 key, 2 knob macro pad with every key labelled, and a panel for changing the selected key">
 </p>
 
 <p align="center">
@@ -35,7 +35,7 @@
 > [!TIP]
 > **In a hurry?** Open a terminal and paste this. It does everything, asks before changing anything, and is safe to run again.
 > ```
-> curl -fsSL https://raw.githubusercontent.com/Probler/macropad/main/install.sh | bash
+> curl -fsSL https://raw.githubusercontent.com/Probler-Yt/MacroPad/main/install.sh | bash
 > ```
 > Never used a terminal? Perfect. [The step by step guide](#-install-it-the-whole-world-is-counting-on-you) was written for you.
 
@@ -134,13 +134,13 @@ A window with a blinking cursor appears. Hello, terminal. 👋
 Click the copy button on the right side of this box (or select the text and press `Ctrl+C`):
 
 ```
-curl -fsSL https://raw.githubusercontent.com/Probler/macropad/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Probler-Yt/MacroPad/main/install.sh | bash
 ```
 
 <details>
 <summary>What does that line actually do? (optional reading)</summary>
 
-In plain words: "download the Macropad installer from GitHub (`curl`), and run it (`| bash`)". The installer is a normal text file, and you can [read it here](install.sh) before running it if you like. Being suspicious of random commands from the internet is a healthy instinct, and I respect it.
+In plain words: "download the MacroPad installer from GitHub (`curl`), and run it (`| bash`)". The installer is a normal text file, and you can [read it here](install.sh) before running it if you like. Being suspicious of random commands from the internet is a healthy instinct, and I respect it.
 
 </details>
 
@@ -168,12 +168,12 @@ The first install downloads about 100 MB on some systems, so give it a minute. Y
 
 This makes Linux notice the new permission. Unplug. Count to two. Plug back in.
 
-### Step 6: Open Macropad
+### Step 6: Open MacroPad
 
-Open your app menu (press the **Meta key**), type **`Macropad`**, and click it. 🎉
+Open your app menu (press the **Meta key**), type **`MacroPad`**, and click it. 🎉
 
 <p align="center">
-  <img src="docs/images/first-launch.png" width="820" alt="Macropad on its first launch: every key is striped because the app hasn't written anything yet">
+  <img src="docs/images/first-launch.png" width="820" alt="MacroPad on its first launch: every key is striped because the app hasn't written anything yet">
 </p>
 
 **Everything is striped the first time. That's correct.** The app hasn't written anything to your pad yet, and the pad has no way of telling it what's already there. You'll fix that in about thirty seconds.
@@ -181,7 +181,7 @@ Open your app menu (press the **Meta key**), type **`Macropad`**, and click it. 
 Look at the bottom left. A **green dot** and **Pad ready** means everything worked. If you see something else, the panel on the right will tell you exactly what to do, or jump to [When something goes wrong](#-when-something-goes-wrong).
 
 > [!TIP]
-> Want it on your taskbar? Right click **Macropad** in your app menu and choose **Pin to Task Manager** (Plasma) or **Pin to Dash** (GNOME).
+> Want it on your taskbar? Right click **MacroPad** in your app menu and choose **Pin to Task Manager** (Plasma) or **Pin to Dash** (GNOME).
 
 **You did it.** The world is saved. Probably. Let's make sure by setting up a key.
 
@@ -347,7 +347,7 @@ Harmless. It only appears if you run the app before its launcher is installed. T
 
 ### The window looks wrong or won't open
 
-Run `macropad` in a terminal and read the last few lines it prints. If it mentions `xcb` or a "platform plugin", run the installer again, which adds the missing library. If you're still stuck, [open an issue](https://github.com/Probler/macropad/issues) and paste what it printed.
+Run `macropad` in a terminal and read the last few lines it prints. If it mentions `xcb` or a "platform plugin", run the installer again, which adds the missing library. If you're still stuck, [open an issue](https://github.com/Probler-Yt/MacroPad/issues) and paste what it printed.
 
 ---
 
@@ -421,7 +421,7 @@ If you have a different pad, you're exactly who this project needs, and it's the
 
 5. Go back to the first terminal and press **`Ctrl+C`**. You now have a file called `macropad-capture.txt`.
 
-6. **[Open an issue](https://github.com/Probler/macropad/issues)** with that file, your `macropad-probe.py` output, and a photo of your pad. That's genuinely all it takes to get your pad supported.
+6. **[Open an issue](https://github.com/Probler-Yt/MacroPad/issues)** with that file, your `macropad-probe.py` output, and a photo of your pad. That's genuinely all it takes to get your pad supported.
 
 ---
 
@@ -520,7 +520,7 @@ udev reads every rules file in one lexical order by filename. The tag is only tu
 TAG=="uaccess", ENV{MAJOR}!="", RUN{builtin}+="uaccess"
 ```
 
-A rule in `99-macropad.rules` adds the tag *after* that line has already run. The device is tagged, and nothing ever acts on it. Same for a file with no number at all, since letters sort after digits. The rule has to sort before `73-`, so Macropad uses `60-macropad.rules`.
+A rule in `99-macropad.rules` adds the tag *after* that line has already run. The device is tagged, and nothing ever acts on it. Same for a file with no number at all, since letters sort after digits. The rule has to sort before `73-`, so MacroPad uses `60-macropad.rules`.
 
 The app's permission check reads `udevadm info` to see whether the device got the tag, finds any rule file mentioning the pad, and compares its name against whichever file on *your* system applies the permission.
 

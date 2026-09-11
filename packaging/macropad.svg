@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- The pad standing upright: two dials, keys, and one key taped orange. -->
+  <rect x="11" y="3" width="42" height="58" rx="8" fill="#202326" stroke="#d8d4cb" stroke-width="2.5"/>
+  <circle cx="23" cy="16" r="6" fill="none" stroke="#d8d4cb" stroke-width="2.5"/>
+  <circle cx="41" cy="16" r="6" fill="none" stroke="#d8d4cb" stroke-width="2.5"/>
+  <g fill="none" stroke="#d8d4cb" stroke-width="2">
+    <rect x="16.5" y="28" width="8" height="8" rx="1.5"/>
+    <rect x="28" y="28" width="8" height="8" rx="1.5"/>
+    <rect x="16.5" y="39.5" width="8" height="8" rx="1.5"/>
+    <rect x="39.5" y="39.5" width="8" height="8" rx="1.5"/>
+    <rect x="28" y="39.5" width="8" height="8" rx="1.5"/>
+  </g>
+  <rect x="39.5" y="28" width="8" height="8" rx="1.5" fill="#eb8a2f"/>
+  <rect x="16.5" y="51" width="31" height="3" rx="1.5" fill="#72767b"/>
+</svg>

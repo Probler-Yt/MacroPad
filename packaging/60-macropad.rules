@@ -1,0 +1,3 @@
+# MacroPad: let the logged-in user configure 1189:8840 macro pads.
+# Must sort before 73-seat-late.rules, which is where uaccess takes effect.
+KERNEL=="hidraw*", ATTRS{idVendor}=="1189", ATTRS{idProduct}=="8840", TAG+="uaccess"
