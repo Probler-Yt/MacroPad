@@ -13,7 +13,7 @@ from PySide6.QtGui import (QColor, QFont, QFontDatabase, QGuiApplication, QIcon,
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QFileDialog, QFrame,
                                QGridLayout, QHBoxLayout, QLabel, QLineEdit,
                                QMainWindow, QMessageBox, QPlainTextEdit,
-                               QPushButton, QVBoxLayout, QWidget)
+                               QPushButton, QSpinBox, QVBoxLayout, QWidget)
 
 from . import core, keymap
 from .padview import INK, INK_DIM, TAPE, WINDOW, Look, PadView
@@ -57,6 +57,10 @@ QFrame[role="banner"] {{ border: 1px solid {LINE}; border-left: 3px solid {BAD};
 QFrame[role="banner"][tone="quiet"] {{ border-left: 3px solid {INK_DIM.name()}; }}
 QFrame[role="banner"] QLabel, QFrame[role="banner"] QPushButton {{ background: transparent; }}
 QFrame[role="footer"] {{ border-top: 1px solid {LINE}; }}
+QFrame[role="editbar"] {{ border-top: 1px solid {TAPE.name()}; background: #1c1a17; }}
+QFrame[role="editbar"] QLabel {{ background: transparent; }}
+QSpinBox {{ background: {FIELD}; border: 1px solid {LINE}; border-radius: 4px;
+            padding: 4px 6px; }}
 """
 
 
@@ -144,12 +148,14 @@ class Inspector(QWidget):
     changed = Signal(str, object)       # control, Binding or None (revert)
     write = Signal(str)
     revert = Signal(str)
+    action = Signal()
 
     def __init__(self):
         super().__init__()
         self.setFixedWidth(360)
         self.control = None
         self._loading = False
+        self.editing_layout = False
 
         v = QVBoxLayout(self)
         v.setContentsMargins(24, 24, 24, 16)
@@ -170,7 +176,10 @@ class Inspector(QWidget):
         self.banner_fix.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.banner_copy = _button("Copy commands")
         self.banner_copy.clicked.connect(self._copy)
-        for w in (self.banner_head, self.banner_text, self.banner_fix, self.banner_copy):
+        self.banner_action = _button("")
+        self.banner_action.clicked.connect(lambda: self.action.emit())
+        for w in (self.banner_head, self.banner_text, self.banner_fix,
+                  self.banner_copy, self.banner_action):
             bl.addWidget(w)
         self.banner_copy.setSizePolicy(self.banner_copy.sizePolicy().horizontalPolicy(),
                                        self.banner_copy.sizePolicy().verticalPolicy())
@@ -290,6 +299,8 @@ class Inspector(QWidget):
         self.banner_fix.setFixedHeight(lh * max(1, len(cmds)) + 30)
         self.banner_fix.setVisible(bool(cmds))
         self.banner_copy.setVisible(bool(cmds))
+        self.banner_action.setVisible(diag.status == "unsupported")
+        self.banner_action.setText("Ask the pad what it is")
         if diag.fix and diag.fix[-1].startswith("#"):
             self.banner_text.setText(self.banner_text.text() + "\n\nThen unplug the pad and plug it back in.")
         self.banner.show()
@@ -307,11 +318,15 @@ class Inspector(QWidget):
         if control is None:
             self.editor.hide()
             self.empty.setText(
-                "Click a key or dial to change what it does.\n\n"
-                + ("The pad can't report what's on it, so this app only knows "
-                   "what it has written itself. Hatched controls are unknown. "
-                   "If you set the pad up with the vendor software, you can "
-                   "import that capture instead." if all_unknown else ""))
+                ("Drag the keys around until the drawing matches your pad, "
+                 "then press Done.\n\nUse the boxes below to change the "
+                 "grid or the number of keys and knobs. This only changes "
+                 "the picture, never the pad."
+                 if self.editing_layout else
+                 "Click a key or dial to change what it does.\n\n")
+                + ("Hatched controls are ones this app hasn't been told about. "
+                   "Press Read pad to ask the pad itself what it's holding."
+                   if all_unknown and not self.editing_layout else ""))
             self.empty.show()
             self._loading = False
             return
@@ -422,6 +437,9 @@ class Window(QMainWindow):
         self.state = core.State()
         self.desired = {}                    # control -> Binding, unwritten edits
         self.diag = None
+        # Pads the user has identified by asking them. Remembered so the app
+        # doesn't go back to calling them unsupported on the next check.
+        self.adopted = set(self.settings.value("adopted", []) or [])
 
         root = QWidget()
         outer = QVBoxLayout(root)
@@ -431,11 +449,40 @@ class Window(QMainWindow):
         body = QHBoxLayout()
         body.setSpacing(0)
         self.pad = PadView()
+        self.pad.set_layout(self.state.layout)
         self.pad.set_orientation(self.settings.value("orientation", "upright"))
         self.inspector = Inspector()
         body.addWidget(self.pad, 1)
         body.addWidget(self.inspector)
         outer.addLayout(body, 1)
+
+        # editor bar, hidden unless you're rearranging the pad
+        self.editbar = QFrame()
+        self.editbar.setProperty("role", "editbar")
+        eb = QHBoxLayout(self.editbar)
+        eb.setContentsMargins(16, 8, 16, 8)
+        eb.setSpacing(8)
+        eb.addWidget(_label("Drag the keys to match your pad.", "dim"))
+        eb.addSpacing(12)
+        self.spin = {}
+        for name, label, lo, hi in (("rows", "Rows", 1, 15),
+                                    ("cols", "Columns", 1, 15),
+                                    ("keys", "Keys", 1, 15),
+                                    ("knobs", "Knobs", 0, 3)):
+            eb.addWidget(_label(label, "dim"))
+            box = QSpinBox()
+            box.setRange(lo, hi)
+            box.setFixedWidth(56)
+            box.valueChanged.connect(self._resize_layout)
+            self.spin[name] = box
+            eb.addWidget(box)
+        eb.addStretch()
+        self.edit_done = _button("Done", "primary")
+        self.edit_cancel = _button("Cancel", "flat")
+        eb.addWidget(self.edit_cancel)
+        eb.addWidget(self.edit_done)
+        self.editbar.hide()
+        outer.addWidget(self.editbar)
 
         footer = QFrame()
         footer.setProperty("role", "footer")
@@ -445,6 +492,10 @@ class Window(QMainWindow):
         self.dot.setFixedSize(9, 9)
         self.status = _label("", "dim")
         self.message = _label("")
+        self.edit_btn = _button("Edit layout", "flat")
+        self.edit_btn.setToolTip("Rearrange the drawing to match your pad")
+        self.read_btn = _button("Read pad", "flat")
+        self.read_btn.setToolTip("Ask the pad what's on it right now")
         self.rotate = _button("Rotate view", "flat")
         self.import_btn = _button("Import capture…", "flat")
         self.write_all = _button("", "primary")
@@ -452,6 +503,8 @@ class Window(QMainWindow):
         fl.addWidget(self.status)
         fl.addSpacing(16)
         fl.addWidget(self.message, 1)
+        fl.addWidget(self.edit_btn)
+        fl.addWidget(self.read_btn)
         fl.addWidget(self.rotate)
         fl.addWidget(self.import_btn)
         fl.addWidget(self.write_all)
@@ -461,8 +514,14 @@ class Window(QMainWindow):
         self.pad.selected.connect(self._select)
         self.inspector.changed.connect(self._changed)
         self.inspector.revert.connect(self._revert)
+        self.inspector.action.connect(self._identify)
         self.inspector.write.connect(lambda c: self._write([c]))
         self.write_all.clicked.connect(lambda: self._write(self._pending()))
+        self.edit_btn.clicked.connect(lambda: self._edit_layout(True))
+        self.edit_done.clicked.connect(lambda: self._edit_layout(False, keep=True))
+        self.edit_cancel.clicked.connect(lambda: self._edit_layout(False, keep=False))
+        self.pad.rearranged.connect(self._rearranged)
+        self.read_btn.clicked.connect(lambda: self._read(quiet=False))
         self.rotate.clicked.connect(self._rotate)
         self.import_btn.clicked.connect(self._import)
 
@@ -473,12 +532,15 @@ class Window(QMainWindow):
         self.timer.start(2000)
         self._poll()
         self._refresh()
+        # The pad can tell us what it holds, so ask rather than assume.
+        if self.diag and self.diag.ready:
+            QTimer.singleShot(0, lambda: self._read(quiet=True))
 
     # ------------------------------------------------------------- model
 
     def _pending(self):
         out = []
-        for c in core.CONTROL_IDS:
+        for c in self.state.layout.control_ids:
             b = self.desired.get(c)
             if b is None:
                 continue
@@ -490,7 +552,7 @@ class Window(QMainWindow):
     def _refresh(self, editor=True):
         pending = set(self._pending())
         looks = {}
-        for c in core.CONTROL_IDS:
+        for c in self.state.layout.control_ids:
             e = self.state.get(c)
             if c in pending:
                 looks[c] = Look(self.desired[c].label(), known=not e.unknown, pending=True)
@@ -510,7 +572,8 @@ class Window(QMainWindow):
         if not editor:
             self.inspector.update_buttons(c in pending, can_write)
             return
-        all_unknown = all(self.state.get(x).unknown for x in core.CONTROL_IDS)
+        all_unknown = all(self.state.get(x).unknown
+                          for x in self.state.layout.control_ids)
         self.inspector.show_control(
             c, self.state.get(c) if c else None,
             self.desired.get(c) if c in pending else None,
@@ -539,8 +602,15 @@ class Window(QMainWindow):
         except Exception as e:            # never let polling kill the window
             self._say(f"Couldn't check the pad: {e}", BAD)
             return
+        d = self.diag
+        if d.status == "unsupported" and d.device and \
+                f"{d.device.vid}:{d.device.pid}" in self.adopted:
+            self.diag = core.Diagnosis("ready", f"Ready on {d.device.path}.",
+                                       device=d.device, warnings=d.warnings)
         colour = {"ready": GOOD, "unplugged": INK_DIM.name()}.get(self.diag.status, BAD)
         self.dot.setStyleSheet(f"background: {colour}; border-radius: 4px;")
+        if self.diag.device:
+            self.pad.device_id = f"{self.diag.device.vid}:{self.diag.device.pid}"
         self.status.setText({
             "ready": f"Pad ready on {self.diag.device.path}" if self.diag.device else "Pad ready",
             "unplugged": "No pad connected",
@@ -551,6 +621,8 @@ class Window(QMainWindow):
         self.inspector.show_problem(self.diag, self.note)
         if self.diag.status != old:
             self._refresh(editor=False)
+            if self.diag.ready and old in ("unplugged", "no-interface", None):
+                self._read(quiet=True)
 
     # ------------------------------------------------------------- write
 
@@ -590,11 +662,121 @@ class Window(QMainWindow):
             self._say(f"Wrote {len(done)} changes to the pad.", GOOD)
         self._refresh()
 
+    def _read(self, quiet=False):
+        """
+        Ask the pad what it holds and believe the answer. Anything you have
+        changed but not written is left alone, since that is your intent
+        rather than the pad's state.
+        """
+        if not (self.diag and self.diag.ready):
+            if not quiet:
+                self._say(self.diag.headline if self.diag else "No pad.", BAD)
+            return
+        self.read_btn.setEnabled(False)
+        self.read_btn.setText("Reading...")
+        QApplication.processEvents()
+        try:
+            got = core.read_into_state(self.diag.device, self.state)
+        except core.ReadError as e:
+            if not quiet:
+                self._say(f"Couldn't read the pad: {e}", BAD)
+        else:
+            n = len(got)
+            self._say(f"Read {n} control{'s' if n != 1 else ''} from the pad.", GOOD)
+        finally:
+            self.read_btn.setEnabled(True)
+            self.read_btn.setText("Read pad")
+        self._refresh()
+
+    def _identify(self):
+        """
+        Interrogate a pad we don't recognise. Reads only. If it answers
+        properly we adopt its shape and carry on; if not we say so and
+        leave it alone.
+        """
+        dev = self.diag.device if self.diag else None
+        if not dev:
+            return
+        self.inspector.banner_action.setEnabled(False)
+        self.inspector.banner_action.setText("Asking...")
+        QApplication.processEvents()
+        try:
+            found = core.detect(dev)
+        finally:
+            self.inspector.banner_action.setEnabled(True)
+            self.inspector.banner_action.setText("Ask the pad what it is")
+
+        if not found.speaks:
+            self._say(f"That pad doesn't speak this protocol: {found.why}", BAD)
+            return
+
+        layout = found.layout
+        self.state = core.State(layout=layout)
+        self.state.layout = layout
+        for control, binding in found.bindings.items():
+            self.state.record(control, binding)
+        self.state.save()
+        self.pad.set_layout(layout)
+        self.desired.clear()
+        self.adopted.add(f"{dev.vid}:{dev.pid}")
+        self.settings.setValue("adopted", sorted(self.adopted))
+        self._poll()
+        self._say(f"It says {layout.keys} keys and {layout.knobs} "
+                  f"knob{'s' if layout.knobs != 1 else ''}. Check the drawing "
+                  f"matches your pad.", GOOD)
+        self._refresh()
+
     def _say(self, text, colour=None):
         self.message.setText(text)
         self.message.setStyleSheet(f"color: {colour};" if colour else "")
 
     # ------------------------------------------------------------- misc
+
+    def _edit_layout(self, on, keep=False):
+        if on:
+            self.editing_from = self.state.layout
+            for name, value in (("rows", self.state.layout.rows),
+                                ("cols", self.state.layout.cols),
+                                ("keys", self.state.layout.keys),
+                                ("knobs", self.state.layout.knobs)):
+                self.spin[name].blockSignals(True)
+                self.spin[name].setValue(value)
+                self.spin[name].blockSignals(False)
+            self._say("")
+        elif not keep:
+            self._set_layout(self.editing_from)
+        else:
+            self.state.save()
+            lay = self.state.layout
+            self._say(f"Layout saved: {lay.describe()}.", GOOD)
+        self.editbar.setVisible(on)
+        self.edit_btn.setEnabled(not on)
+        self.read_btn.setEnabled(not on)
+        self.inspector.editing_layout = on
+        self.pad.select(None if on else self.pad.current)
+        self.pad.set_editing(on)
+        self._refresh()
+
+    def _set_layout(self, layout):
+        self.state.layout = layout
+        self.pad.set_layout(layout)
+        if self.pad.current not in layout.control_ids:
+            self.pad.current = None
+        self._refresh()
+
+    def _rearranged(self, layout):
+        self.state.layout = layout
+
+    def _resize_layout(self):
+        lay = self.state.layout.resized(
+            rows=self.spin["rows"].value(), cols=self.spin["cols"].value(),
+            keys=self.spin["keys"].value(), knobs=self.spin["knobs"].value())
+        if lay.rows != self.spin["rows"].value():     # it had to grow to fit
+            self.spin["rows"].blockSignals(True)
+            self.spin["rows"].setValue(lay.rows)
+            self.spin["rows"].blockSignals(False)
+        self._set_layout(lay)
+        self.pad.set_editing(True)
 
     def _rotate(self):
         o = "flat" if self.pad.orientation == "upright" else "upright"

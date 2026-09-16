@@ -77,6 +77,8 @@ class EveryCapture(unittest.TestCase):
         seen = 0
         for path in sorted(CAPTURES.glob("*.txt")):
             for report in core.read_capture(path):
+                if report[1] in (proto.MAGIC_INFO, proto.MAGIC_READ):
+                    continue                      # a query, not a binding
                 if core.is_commit(report):
                     self.assertEqual(proto.native_commit(3)[:len(report)], report)
                     continue
@@ -105,6 +107,22 @@ class EveryCapture(unittest.TestCase):
             self.assertEqual(state.get("dial1-right").binding, core.Binding(keys="3"))
             self.assertTrue(state.get("dial2-left").unknown)
 
+    def test_capture_directions_are_separate(self):
+        """A reply from the pad must never be mistaken for a binding."""
+        with tempfile.TemporaryDirectory() as d:
+            cap = Path(d) / "both.txt"
+            cap.write_text(
+                "[1] interrupt out ep=4\n    03fd010101000000000001000400\n"
+                "[2] interrupt in ep=3\n    03fd020101000000000001001500\n"
+                "[3] interrupt out ep=4\n    03fdfeff00000000\n")
+            self.assertEqual(len(core.read_capture(cap)), 2)
+            self.assertEqual(len(core.read_capture(cap, incoming=True)), 1)
+
+            state = core.State(Path(d) / "s.json")
+            got = core.import_capture(cap, state)
+            self.assertEqual([(c, b.keys) for c, _, b in got], [("key1", "a")])
+            self.assertTrue(state.get("key2").unknown)
+
     def test_uncommitted_configs_are_not_imported(self):
         with tempfile.TemporaryDirectory() as d:
             cap = Path(d) / "c.txt"
@@ -113,6 +131,281 @@ class EveryCapture(unittest.TestCase):
             state = core.State(Path(d) / "s.json")
             self.assertEqual(core.import_capture(cap, state), [])
             self.assertTrue(state.get("key1").unknown)
+
+
+class ReadingThePad(unittest.TestCase):
+    """The vendor software's "view settings", captured and decoded."""
+
+    def setUp(self):
+        self.cap = CAPTURES / "1189-8840-read.txt"
+        self.sent = core.read_capture(self.cap)
+        self.got = core.read_capture(self.cap, incoming=True)
+
+    def test_our_requests_match_the_vendors(self):
+        info, read1, read2, read3 = self.sent
+        self.assertEqual(proto.native_info(3)[:2], info[:2])
+        for layer, sent in ((1, read1), (2, read2), (3, read3)):
+            # the vendor's trailing bytes are uninitialised memory; ours are zero
+            self.assertEqual(proto.native_read(3, layer)[:6], sent[:6])
+
+    def test_info_reply(self):
+        self.assertEqual(core.decode_info(self.got[0]), (12, 2))
+        self.assertEqual(len(core.KEYS), 12)
+        self.assertEqual(len(core.DIALS), 2)
+
+    def test_layer_1_is_what_the_pad_holds(self):
+        layer1 = {}
+        for r in self.got:
+            d = core.decode_config(r)
+            if d and d[1] == 1:
+                layer1[d[0]] = d[2]
+        # dials, which is the mapping we could never confirm by writing alone
+        self.assertEqual(layer1["dial1-left"], core.Binding(media="volumedown"))
+        self.assertEqual(layer1["dial1-push"], core.Binding(media="mute"))
+        self.assertEqual(layer1["dial1-right"], core.Binding(media="volumeup"))
+        self.assertEqual(layer1["dial2-left"], core.Binding(media="brightnessdown"))
+        self.assertEqual(layer1["dial2-push"], core.Binding(media="calculator"))
+        self.assertEqual(layer1["dial2-right"], core.Binding(media="brightnessup"))
+        # keys, including modifiers and an empty one
+        self.assertEqual(layer1["key2"], core.Binding(keys="ctrl+alt+t"))
+        self.assertEqual(layer1["key6"], core.Binding(keys="ctrl+shift+alt+super+f12"))
+        self.assertEqual(layer1["key3"], core.Binding(media="prev"))
+        self.assertTrue(layer1["key1"].none)
+
+    def test_a_read_binding_re_encodes_to_the_same_write(self):
+        """Whatever we read, writing it back must produce the same meaning."""
+        for r in self.got:
+            d = core.decode_config(r)
+            if not d:
+                continue
+            control, layer, binding = d
+            again = core.decode_config(
+                binding.reports(3, core.action_byte(control), layer)[0])
+            self.assertIsNotNone(again, binding)
+            self.assertEqual(again[0], control)
+            self.assertEqual(again[2], binding)
+
+    def test_the_pad_stores_two_key_sequences(self):
+        """
+        Slots 0x0d to 0x0f hold two keystrokes each, in the layout we had
+        assumed for sequences: count at byte 10, then (modifier, keycode)
+        pairs. This is factory data for a 15 key sibling rather than
+        something we watched being written, so it supports the encoding
+        without proving the pad accepts it from us.
+        """
+        multi = [r for r in self.got
+                 if r[1] == proto.MAGIC_READ and r[10] == 2 and r[4] != 2]
+        self.assertTrue(multi)
+        r = multi[0]
+        self.assertEqual((r[11], r[13]), (0, 0))         # no modifiers
+        self.assertTrue(r[12] and r[14])                  # two real keycodes
+
+    def test_replies_cover_the_firmware_not_the_hardware(self):
+        """
+        The pad answers for 24 slots per layer: 15 keys and 3 knobs, which
+        is the most this firmware supports. Ours has 12 keys and 2 knobs,
+        so 6 of those slots are for hardware that isn't there. Those decode
+        to no control, which is what we want: the app must not offer them.
+        """
+        configs = [r for r in self.got if r[1] == proto.MAGIC_READ]
+        self.assertEqual(len(configs), 24 * 3)
+
+        real = [r for r in configs if core.decode_config(r)]
+        self.assertEqual(len(real), len(core.CONTROL_IDS) * 3)
+
+        phantom = {r[2] for r in configs if not core.decode_config(r)}
+        self.assertEqual(phantom, {0x0d, 0x0e, 0x0f,       # keys 13 to 15
+                                   0x16, 0x17, 0x18})      # a third knob
+
+    def test_reading_fills_in_the_state(self):
+        from unittest import mock
+        replies = [r for r in self.got if r[1] == proto.MAGIC_READ and r[3] == 1]
+        dev = core.Device(path="/dev/null-pad", report_id=3, writable=True)
+        with tempfile.TemporaryDirectory() as d:
+            state = core.State(Path(d) / "s.json")
+            with mock.patch.object(core, "_exchange", return_value=replies):
+                got = core.read_into_state(dev, state)
+            self.assertEqual(len(got), len(core.CONTROL_IDS))
+            fresh = core.State(Path(d) / "s.json")
+            self.assertFalse(any(fresh.get(c).unknown for c in core.CONTROL_IDS))
+            self.assertEqual(fresh.get("dial2-push").binding,
+                             core.Binding(media="calculator"))
+
+
+class Detection(unittest.TestCase):
+    """
+    Detecting an unknown pad, using the real capture as the stand-in for a
+    pad that speaks this protocol, and mangled versions for ones that don't.
+    """
+
+    def setUp(self):
+        self.dev = core.Device(path="/dev/null-pad", report_id=3, writable=True,
+                               name="Some Other Pad", vid="1189", pid="8890")
+        got = core.read_capture(CAPTURES / "1189-8840-read.txt", incoming=True)
+        self.info = [r for r in got if r[1] == proto.MAGIC_INFO]
+        self.layer1 = [r for r in got if r[1] == proto.MAGIC_READ and r[3] == 1]
+
+    def run_detect(self, info=None, layer=None):
+        from unittest import mock
+        calls = [info if info is not None else self.info,
+                 layer if layer is not None else self.layer1]
+        with mock.patch.object(core, "_exchange", side_effect=calls):
+            return core.detect(self.dev)
+
+    def test_a_pad_that_speaks_is_recognised(self):
+        d = self.run_detect()
+        self.assertTrue(d.speaks, d.why)
+        self.assertEqual((d.keys, d.knobs), (12, 2))
+        self.assertEqual(d.layout, core.Layout(12, 2, 4, 3))
+        self.assertEqual(d.bindings["dial1-left"], core.Binding(media="volumedown"))
+
+    def test_silence_is_not_taken_as_yes(self):
+        d = self.run_detect(info=[])
+        self.assertFalse(d.speaks)
+        self.assertIn("didn't answer", d.why)
+
+    def test_a_reply_that_is_not_ours_is_rejected(self):
+        d = self.run_detect(info=[bytes.fromhex("03aa5501") + bytes(60)])
+        self.assertFalse(d.speaks)
+
+    def test_nonsense_counts_are_rejected(self):
+        bad = bytearray(self.info[0])
+        bad[2] = 99                                  # 99 keys
+        d = self.run_detect(info=[bytes(bad)])
+        self.assertFalse(d.speaks)
+        self.assertIn("99 keys", d.why)
+
+    def test_a_pad_that_answers_one_query_but_not_the_other(self):
+        """The dangerous case: sounds right, then doesn't describe itself."""
+        d = self.run_detect(layer=self.layer1[:4])
+        self.assertFalse(d.speaks)
+        self.assertIn("didn't report", d.why)
+
+    def test_a_six_key_pad(self):
+        info = bytearray(self.info[0])
+        info[2], info[3] = 6, 1
+        keep = {1, 2, 3, 4, 5, 6, 0x10, 0x11, 0x12}
+        layer = [r for r in self.layer1 if r[2] in keep]
+        d = self.run_detect(info=[bytes(info)], layer=layer)
+        self.assertTrue(d.speaks, d.why)
+        self.assertEqual(d.layout, core.Layout(6, 1, 2, 3))
+        self.assertEqual(len(d.layout.control_ids), 9)
+
+    def test_report_is_pasteable(self):
+        text = core.detection_report(self.dev, self.run_detect())
+        self.assertIn("1189:8890", text)
+        self.assertIn("0x10  dial1-left", text)
+        refused = core.detection_report(self.dev, self.run_detect(info=[]))
+        self.assertIn("did NOT answer", refused)
+
+
+class LayoutIsRemembered(unittest.TestCase):
+
+    def test_state_keeps_the_pad_shape(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "s.json"
+            lay = core.Layout(9, 2, 3, 3, "nine")
+            st = core.State(path, layout=lay)
+            st.record("key9", core.Binding(keys="f5"))
+            st.save()
+            again = core.State(path)
+            self.assertEqual(again.layout, lay)
+            self.assertEqual(len(again.layout.control_ids), 15)
+            self.assertEqual(again.get("key9").binding, core.Binding(keys="f5"))
+
+    def test_an_old_state_file_still_loads(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "s.json"
+            path.write_text(json.dumps({
+                "format": core.FORMAT, "device": core.DEVICE_ID,
+                "layers": {"1": {"key1": {"binding": {"keys": "a"},
+                                          "written": "2026-01-01T00:00:00"}}}}))
+            st = core.State(path)
+            self.assertEqual(st.layout, core.DEFAULT_LAYOUT)
+            self.assertEqual(st.get("key1").binding, core.Binding(keys="a"))
+
+
+class Arranging(unittest.TestCase):
+    """Moving keys around the grid, and keeping it consistent when rotated."""
+
+    def setUp(self):
+        self.lay = core.DEFAULT_LAYOUT
+
+    def test_the_default_matches_the_printed_pad(self):
+        flat = {k: (r, c) for k, r, c in self.lay.spots()}
+        self.assertEqual(flat["key1"], (0, 0))       # top left, reading across
+        self.assertEqual(flat["key4"], (0, 3))
+        self.assertEqual(flat["key12"], (2, 3))
+
+    def test_upright_is_the_same_pad_turned(self):
+        from macropad_gui import padview
+        up = {k: (r, c) for k, r, c in padview._key_grid(self.lay, "upright")}
+        self.assertEqual(up["key1"], (3, 0))         # bottom left when stood up
+        self.assertEqual(up["key4"], (0, 0))
+        self.assertEqual(up["key12"], (0, 2))
+        self.assertEqual(len(set(up.values())), self.lay.keys)
+
+    def test_swapping_two_keys(self):
+        places = list(self.lay.spots())
+        moved = self.lay.rearranged(
+            [(2, 3) if k == "key1" else (0, 0) if k == "key12" else (r, c)
+             for k, r, c in places])
+        flat = {k: (r, c) for k, r, c in moved.spots()}
+        self.assertEqual(flat["key1"], (2, 3))
+        self.assertEqual(flat["key12"], (0, 0))
+        self.assertEqual(len(set(flat.values())), 12)
+
+    def test_resizing_keeps_what_still_fits(self):
+        moved = self.lay.rearranged(
+            [(2, 3) if k == "key1" else (0, 0) if k == "key12" else (r, c)
+             for k, r, c in self.lay.spots()])
+        self.assertEqual(moved.resized(cols=6).cols, 6)
+        smaller = moved.resized(rows=2, cols=2, keys=4)
+        self.assertEqual(len(smaller.spots()), 4)
+        for _, r, c in smaller.spots():
+            self.assertLess(r, 2)
+            self.assertLess(c, 2)
+
+    def test_a_grid_too_small_grows_instead_of_failing(self):
+        grown = self.lay.resized(rows=1, cols=3)
+        self.assertEqual((grown.rows, grown.cols), (4, 3))
+        self.assertEqual(len(grown.spots()), 12)
+
+    def test_layout_survives_a_save(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "s.json"
+            moved = self.lay.rearranged(
+                [(2, 3) if k == "key1" else (0, 0) if k == "key12" else (r, c)
+                 for k, r, c in self.lay.spots()])
+            st = core.State(path, layout=moved)
+            st.save()
+            self.assertEqual(core.State(path).layout, moved)
+
+
+class Layouts(unittest.TestCase):
+
+    def test_action_bytes_agree_with_the_protocol_module(self):
+        for c in core.DEFAULT_LAYOUT.control_ids:
+            self.assertEqual(core.action_byte(c), proto.CONTROLS[c], c)
+
+    def test_layouts_of_other_shapes(self):
+        three = core.Layout(3, 1, 1, 3)
+        self.assertEqual(three.control_ids,
+                         ("key1", "key2", "key3",
+                          "dial1-left", "dial1-push", "dial1-right"))
+        self.assertEqual(core.action_byte("dial1-left"), 0x10)
+        fifteen = core.Layout(15, 3, 5, 3)
+        self.assertEqual(core.action_byte("dial3-right"), 0x18)
+        self.assertEqual(len(fifteen.control_ids), 24)
+
+    def test_impossible_layouts_are_refused(self):
+        for bad in ((0, 2, 4, 3), (99, 2, 40, 3), (12, 9, 4, 3), (12, 2, 2, 3)):
+            with self.assertRaises(ValueError, msg=bad):
+                core.Layout(*bad)
+
+    def test_round_trip(self):
+        l = core.Layout(9, 2, 3, 3, "nine")
+        self.assertEqual(core.Layout.from_json(l.to_json()), l)
 
 
 class BindingModel(unittest.TestCase):
@@ -244,8 +537,9 @@ class PermissionDiagnosis(unittest.TestCase):
 
     def diag(self, rules, tags):
         from unittest import mock
-        dev = [{"path": "/dev/hidraw10", "pid": "8840", "report_id": 3,
-                "writable": False, "name": "USB Composite Device"}]
+        dev = [{"path": "/dev/hidraw10", "vid": "1189", "pid": "8840",
+                "report_id": 3, "writable": False,
+                "name": "USB Composite Device"}]
         with mock.patch.object(proto, "find_devices", return_value=dev), \
              mock.patch.object(core, "_matching_rules", return_value=rules), \
              mock.patch.object(core, "_udev_tags", return_value=tags), \
@@ -278,7 +572,9 @@ class PermissionDiagnosis(unittest.TestCase):
             d = core.diagnose()
         self.assertEqual(d.status, "unsupported")
         self.assertIn("1189:8890", d.headline)
-        self.assertIsNone(d.device)
+        # the device comes with it now, so the app can offer to interrogate it
+        self.assertEqual(d.device.path, "/dev/hidraw4")
+        self.assertEqual((d.device.vid, d.device.pid), ("1189", "8890"))
 
     def test_rule_fine_but_not_local_session(self):
         d = self.diag(["/etc/udev/rules.d/60-macropad.rules"], {"uaccess"})
@@ -306,6 +602,30 @@ class GuiSmoke(unittest.TestCase):
                 w.pad.select(c)
                 w._refresh()
                 self.assertEqual(w.inspector.title.text(), core.control_name(c))
+            # the drawing must cope with any shape the protocol allows
+            for lay in (core.Layout(3, 1, 1, 3), core.Layout(15, 3, 5, 3),
+                        core.Layout(4, 0, 1, 4)):
+                w.pad.set_layout(lay)
+                for orientation in ("upright", "flat"):
+                    w.pad.set_orientation(orientation)
+                    w.pad.grab()
+                    for c in lay.control_ids:
+                        self.assertIsNotNone(core.action_byte(c))
+            # dragging a key in edit mode swaps it with whatever is there
+            w.pad.set_layout(core.DEFAULT_LAYOUT)
+            w._edit_layout(True)
+            from macropad_gui import padview
+            before = {k: (r, c) for k, r, c
+                      in padview._key_grid(w.pad.layout, w.pad.orientation)}
+            w.pad.drag = "key1"
+            w.pad._place("key1", before["key12"])
+            after = {k: (r, c) for k, r, c
+                     in padview._key_grid(w.pad.layout, w.pad.orientation)}
+            self.assertEqual(after["key1"], before["key12"])
+            self.assertEqual(after["key12"], before["key1"])
+            w._edit_layout(False, keep=False)
+            self.assertEqual(w.state.layout, core.DEFAULT_LAYOUT)
+            self.assertFalse(w.pad.editing)
             w._changed("key1", core.Binding(media="mute"))
             self.assertEqual(w._pending(), ["key1"])
             # choosing Nothing marks the control as changed straight away

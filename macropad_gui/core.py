@@ -26,7 +26,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -42,23 +42,155 @@ except ImportError:                      # running from inside the package dir
 VID, PID = "1189", "8840"
 DEVICE_ID = f"{VID}:{PID}"
 
-KEYS = tuple(f"key{i}" for i in range(1, 13))
-DIALS = ("dial1", "dial2")
 DIAL_ACTIONS = ("left", "push", "right")
-CONTROL_IDS = KEYS + tuple(f"{d}-{a}" for d in DIALS for a in DIAL_ACTIONS)
-
-# Action bytes come from macropad.CONTROLS, never from here.
-for _cid in CONTROL_IDS:
-    assert _cid in proto.CONTROLS, f"macropad.py has no control {_cid}"
-
 WRITE_GAP = 0.02      # same pause the CLI leaves between reports
 
 
 def action_byte(control):
-    return proto.CONTROLS[control]
+    """
+    The byte the pad uses for one control. Keys count from 1; knobs start
+    at 0x10, three apiece. Confirmed on 1189:8840 both by writing and by
+    reading back, and it is what the pad reports for its own slots.
+    """
+    control = control.lower()
+    if control.startswith("key"):
+        return int(control[3:])
+    dial, act = control.split("-")
+    return proto.KNOB_BASE + (int(dial[4:]) - 1) * 3 + DIAL_ACTIONS.index(act)
 
 
-CONTROL_FOR_ACTION = {action_byte(c): c for c in CONTROL_IDS}
+@dataclass(frozen=True)
+class Layout:
+    """
+    The shape of one pad: how many keys and knobs, and how the keys are
+    arranged when you look at it.
+
+    keys and knobs come from the pad itself (the 0xFB query). Rows and
+    columns do not: the pad knows how many keys it has, not how they are
+    laid out, so that part is either known from the model or chosen by
+    whoever owns it.
+
+    Rows and columns describe the pad lying flat, the way its keys are
+    printed. Standing it upright just turns the drawing.
+    """
+    keys: int = 12
+    knobs: int = 2
+    rows: int = 3
+    cols: int = 4
+    name: str = ""
+    places: tuple = ()      # ((row, col), ...) per key; empty means left to right
+
+    def __post_init__(self):
+        if not 1 <= self.keys <= proto.KEY_SLOTS:
+            raise ValueError(f"a pad can have 1 to {proto.KEY_SLOTS} keys")
+        if not 0 <= self.knobs <= proto.KNOB_SLOTS:
+            raise ValueError(f"a pad can have up to {proto.KNOB_SLOTS} knobs")
+        if self.rows * self.cols < self.keys:
+            raise ValueError(f"{self.rows}x{self.cols} can't hold "
+                             f"{self.keys} keys")
+        if self.places:
+            if len(self.places) != self.keys:
+                raise ValueError("places must give a spot for every key")
+            if len(set(self.places)) != len(self.places):
+                raise ValueError("two keys can't share a spot")
+            for r, c in self.places:
+                if not (0 <= r < self.rows and 0 <= c < self.cols):
+                    raise ValueError(f"({r}, {c}) is outside {self.rows}x{self.cols}")
+
+    def spots(self):
+        """[(key_id, row, col)] with the pad lying flat."""
+        if self.places:
+            return [(f"key{i + 1}", r, c) for i, (r, c) in enumerate(self.places)]
+        return [(f"key{i + 1}", i // self.cols, i % self.cols)
+                for i in range(self.keys)]
+
+    def rearranged(self, places):
+        """The same pad with its keys in different spots."""
+        return replace(self, places=tuple((int(r), int(c)) for r, c in places))
+
+    def resized(self, rows=None, cols=None, keys=None, knobs=None):
+        """
+        Change the grid, keeping any arrangement that still fits and
+        falling back to left to right for keys that no longer do.
+        """
+        rows = self.rows if rows is None else rows
+        cols = self.cols if cols is None else cols
+        keys = self.keys if keys is None else keys
+        knobs = self.knobs if knobs is None else knobs
+        if rows * cols < keys:                 # grow to fit rather than refuse
+            rows = -(-keys // cols)
+
+        taken, places = set(), []
+        old = {i: p for i, p in enumerate(self.places)}
+        free = [(r, c) for r in range(rows) for c in range(cols)]
+        for i in range(keys):
+            spot = old.get(i)
+            if spot and spot[0] < rows and spot[1] < cols and spot not in taken:
+                places.append(spot)
+                taken.add(spot)
+            else:
+                places.append(None)
+        for i, spot in enumerate(places):
+            if spot is None:
+                nxt = next(p for p in free if p not in taken)
+                places[i] = nxt
+                taken.add(nxt)
+        return replace(self, rows=rows, cols=cols, keys=keys, knobs=knobs,
+                       places=tuple(places) if self.places else ())
+
+    @property
+    def key_ids(self):
+        return tuple(f"key{i}" for i in range(1, self.keys + 1))
+
+    @property
+    def dial_ids(self):
+        return tuple(f"dial{i}" for i in range(1, self.knobs + 1))
+
+    @property
+    def control_ids(self):
+        return self.key_ids + tuple(f"{d}-{a}" for d in self.dial_ids
+                                    for a in DIAL_ACTIONS)
+
+    @property
+    def control_for_action(self):
+        return {action_byte(c): c for c in self.control_ids}
+
+    def describe(self):
+        knobs = (f" and {self.knobs} knob{'s' if self.knobs != 1 else ''}"
+                 if self.knobs else "")
+        return f"{self.keys} keys in {self.rows}x{self.cols}{knobs}"
+
+    def to_json(self):
+        d = {"keys": self.keys, "knobs": self.knobs,
+             "rows": self.rows, "cols": self.cols, "name": self.name}
+        if self.places:
+            d["places"] = [list(p) for p in self.places]
+        return d
+
+    @classmethod
+    def from_json(cls, d):
+        return cls(keys=int(d["keys"]), knobs=int(d["knobs"]),
+                   rows=int(d["rows"]), cols=int(d["cols"]),
+                   name=d.get("name", ""),
+                   places=tuple(tuple(p) for p in d.get("places", ())))
+
+
+# Pads we have laid eyes on. Anything else has to be detected or described
+# by its owner, because a USB id alone does not pin down a layout: 1189:8840
+# covers several different pads.
+KNOWN_LAYOUTS = {
+    ("1189", "8840"): Layout(12, 2, 3, 4, "12 keys, 2 knobs"),
+}
+DEFAULT_LAYOUT = KNOWN_LAYOUTS[(VID, PID)]
+
+# Kept so older code and the CLI keep working; the app uses a Layout.
+KEYS = DEFAULT_LAYOUT.key_ids
+DIALS = DEFAULT_LAYOUT.dial_ids
+CONTROL_IDS = DEFAULT_LAYOUT.control_ids
+CONTROL_FOR_ACTION = DEFAULT_LAYOUT.control_for_action
+
+for _cid in CONTROL_IDS:
+    assert action_byte(_cid) == proto.CONTROLS[_cid], _cid
 
 _DIAL_WORDS = {"left": "turn left", "push": "press", "right": "turn right"}
 
@@ -246,7 +378,7 @@ def _atomic_write_json(path, data):
         raise
 
 
-FORMAT = 1
+FORMAT = 2      # 1 had no layout, and one build saved rows and cols swapped
 
 
 @dataclass
@@ -264,16 +396,23 @@ class State:
     should call record()/mark_unknown(); the GUI just reads it.
     """
 
-    def __init__(self, path=None):
+    def __init__(self, path=None, layout=None):
         self.path = Path(path) if path else config_dir() / f"state-{VID}-{PID}.json"
         self.entries = {}                    # (layer, control) -> Entry
+        self.layout = layout or DEFAULT_LAYOUT
         if self.path.exists():
             self._load()
 
     def _load(self):
         data = json.loads(self.path.read_text())
-        if data.get("format") != FORMAT:
-            raise ValueError(f"{self.path}: unsupported format {data.get('format')}")
+        version = data.get("format")
+        if version not in (1, FORMAT):
+            raise ValueError(f"{self.path}: unsupported format {version}")
+        # Format 1 files either have no layout or have one from the build that
+        # stored rows and columns the wrong way round. Ignore it either way;
+        # the bindings are still good.
+        if version == FORMAT and data.get("layout"):
+            self.layout = Layout.from_json(data["layout"])
         for layer, controls in data.get("layers", {}).items():
             for control, e in controls.items():
                 if e.get("unknown"):
@@ -293,6 +432,7 @@ class State:
                 d = {"binding": e.binding.to_json(), "written": e.written}
             layers.setdefault(str(layer), {})[control] = d
         _atomic_write_json(self.path, {"format": FORMAT, "device": DEVICE_ID,
+                                       "layout": self.layout.to_json(),
                                        "layers": layers})
 
     def get(self, control, layer=1):
@@ -315,6 +455,8 @@ class Device:
     report_id: int
     writable: bool
     name: str = ""
+    vid: str = VID
+    pid: str = PID
 
 
 @dataclass
@@ -435,17 +577,19 @@ def diagnose(keyd=True):
 
     if not found and everything:
         other = everything[0]
+        dev = Device(path=other["path"], report_id=other["report_id"],
+                     writable=other["writable"], name=other.get("name", ""),
+                     vid=other["vid"], pid=other["pid"])
         return Diagnosis(
             "unsupported",
-            f"Found a {other['vid']}:{other['pid']} pad, which this app doesn't know yet.",
-            detail=[f"So far only {DEVICE_ID} (12 keys, 2 dials) has been "
-                    "worked out. Pads in this family differ in layout and "
-                    "protocol, so writing to yours with the wrong one could "
-                    "fail or scramble it. The app won't try.",
-                    "ch57x-keyboard-tool, a command line tool, supports several "
-                    "of these pads today. To get yours into this app, the "
-                    "README's \"Other pads\" section shows how to capture what "
-                    "the vendor software sends."],
+            f"Found a {other['vid']}:{other['pid']} pad, which isn't one this "
+            "app knows.",
+            device=dev,
+            detail=["Pads in this family differ in both layout and protocol, "
+                    "so the app won't write to one it hasn't identified.",
+                    "It can ask the pad about itself first. That only reads, "
+                    "and if the pad doesn't answer properly nothing else "
+                    "happens."],
             warnings=warnings)
 
     if not found:
@@ -464,7 +608,8 @@ def diagnose(keyd=True):
 
     d = found[0]
     dev = Device(path=d["path"], report_id=d["report_id"],
-                 writable=d["writable"], name=d.get("name", ""))
+                 writable=d["writable"], name=d.get("name", ""),
+                 vid=d["vid"], pid=d["pid"])
 
     if dev.writable:
         return Diagnosis("ready", f"Ready on {dev.path}.", device=dev,
@@ -569,13 +714,20 @@ def write_binding(device, control, binding, state, layer=1, _write=None):
 
 # --------------------------------------------------------------- decoding
 
+def decode_info(report):
+    """(keys, knobs) from a 0xFB reply, or None."""
+    if len(report) < 4 or report[1] != proto.MAGIC_INFO:
+        return None
+    return report[2], report[3]
+
+
 def decode_config(report):
     """
     The inverse of Binding.reports()[0]: (control, layer, Binding) from a
     native config report, or None if it isn't one we understand. Used to
     import captures and to prove round trips in the tests.
     """
-    if len(report) < 13 or report[1] != proto.MAGIC_NATIVE:
+    if len(report) < 13 or report[1] not in (proto.MAGIC_NATIVE, proto.MAGIC_READ):
         return None
     action, layer, kind = report[2], report[3], report[4]
     control = CONTROL_FOR_ACTION.get(action)
@@ -584,17 +736,17 @@ def decode_config(report):
     delay = report[5] | (report[6] << 8)
     count = report[10]
 
-    if kind == proto.KeyType.MULTIMEDIA:
+    if kind == proto.KeyType.MULTIMEDIA and count:
         media = _MEDIA_BY_USAGE.get(report[11] | (report[12] << 8))
         return (control, layer, Binding(media=media)) if media else None
 
-    if kind == proto.KeyType.BASIC and count == 0:
+    if count == 0 and kind in (proto.KeyType.NONE, proto.KeyType.BASIC):
         mods, code = report[11], report[12]
         if not mods and not code:
             return control, layer, Binding(none=True)
         return None
 
-    if kind == proto.KeyType.BASIC and count:
+    if kind in (proto.KeyType.NONE, proto.KeyType.BASIC) and count:
         steps = []
         for i in range(count):
             off = 11 + 2 * i
@@ -616,11 +768,21 @@ def is_commit(report):
         (report[2], report[3]) == proto.TERMINATOR
 
 
-def read_capture(path):
-    """Raw report bytes from a macropad-capture.py output file, in order."""
+def read_capture(path, incoming=False):
+    """
+    Reports from a macropad-capture.py output file, in order.
+
+    Captures can now hold both directions. By default we return only what
+    was sent TO the pad, since that is what a binding looks like; pass
+    incoming=True for what the pad sent back.
+    """
     out = []
+    want = " in " if incoming else " out "
+    keep = False
     for line in Path(path).read_text().splitlines():
-        if line.startswith("    "):
+        if line.startswith("["):
+            keep = want in f" {line.split(']', 1)[-1].strip()} "
+        elif line.startswith("    ") and keep:
             try:
                 out.append(bytes.fromhex(line.strip()))
             except ValueError:
@@ -648,3 +810,192 @@ def import_capture(path, state):
     if done:
         state.save()
     return done
+
+
+# ---------------------------------------------------------------- reading
+
+READ_TIMEOUT = 1.5       # total, per request
+READ_QUIET = 0.25        # replies have stopped once this much silence passes
+
+
+class ReadError(Exception):
+    pass
+
+
+def _exchange(path, request, want=None):
+    """
+    Send one request and collect replies until the pad goes quiet.
+
+    Reading is the one place we write to the pad without changing it: both
+    commands here are queries, byte for byte what the vendor software sends.
+    """
+    import select
+
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_NONBLOCK)
+    except OSError as e:
+        raise ReadError(_explain(e)) from e
+
+    replies = []
+    try:
+        while select.select([fd], [], [], 0)[0]:      # drain anything stale
+            try:
+                os.read(fd, 128)
+            except OSError:
+                break
+        try:
+            os.write(fd, request)
+        except OSError as e:
+            raise ReadError(_explain(e)) from e
+
+        deadline = time.monotonic() + READ_TIMEOUT
+        last = time.monotonic()
+        while time.monotonic() < deadline:
+            if not select.select([fd], [], [], 0.05)[0]:
+                if replies and time.monotonic() - last > READ_QUIET:
+                    break
+                continue
+            try:
+                data = os.read(fd, 128)
+            except BlockingIOError:
+                continue
+            except OSError as e:
+                raise ReadError(_explain(e)) from e
+            if not data:
+                continue
+            last = time.monotonic()
+            replies.append(data)
+            if want is not None and len(replies) >= want:
+                break
+    finally:
+        os.close(fd)
+    return replies
+
+
+def read_info(device):
+    """(keys, knobs) as the pad reports them, or None if it doesn't answer."""
+    for reply in _exchange(device.path, proto.native_info(device.report_id), want=1):
+        got = decode_info(reply)
+        if got:
+            return got
+    return None
+
+
+def read_layer(device, layer=1):
+    """{control: Binding} for one layer, as it is on the pad right now."""
+    out = {}
+    for reply in _exchange(device.path, proto.native_read(device.report_id, layer)):
+        decoded = decode_config(reply)
+        if not decoded:
+            continue
+        control, got_layer, binding = decoded
+        if got_layer == layer:
+            out[control] = binding
+    return out
+
+
+def read_into_state(device, state, layer=1):
+    """Read the pad and make the shadow state match it. Returns what was read."""
+    bindings = read_layer(device, layer)
+    if not bindings:
+        raise ReadError("the pad didn't answer")
+    for control, binding in bindings.items():
+        state.record(control, binding, layer)
+    state.save()
+    return bindings
+
+
+# -------------------------------------------------------------- detection
+
+@dataclass
+class Detection:
+    """What a read-only interrogation of an unrecognised pad turned up."""
+    speaks: bool = False          # it answered our protocol properly
+    keys: int = 0
+    knobs: int = 0
+    layers: int = 0
+    bindings: dict = field(default_factory=dict)
+    why: str = ""                 # when speaks is False, what went wrong
+
+    @property
+    def layout(self):
+        """
+        A first guess at the shape. The pad reports counts, not geometry,
+        so rows and columns are a guess the owner should confirm.
+        """
+        if not self.speaks:
+            return None
+        cols = 3 if self.keys % 3 == 0 else (4 if self.keys % 4 == 0 else self.keys)
+        rows = -(-self.keys // cols)
+        return Layout(self.keys, self.knobs, rows, cols)
+
+
+def detect(device):
+    """
+    Ask an unknown pad what it is, without configuring anything.
+
+    Both commands are queries. We only conclude the pad speaks this
+    protocol if it answers both in the right shape: a well formed info
+    reply, and a layer whose controls are exactly the slots that reply
+    implies. A pad from a different family will fail one of those and we
+    leave it alone.
+    """
+    try:
+        info = read_info(device)
+    except ReadError as e:
+        return Detection(why=f"it didn't answer: {e}")
+    if not info:
+        return Detection(why="it didn't answer the 'what are you' query")
+
+    keys, knobs = info
+    if not 1 <= keys <= proto.KEY_SLOTS or not 0 <= knobs <= proto.KNOB_SLOTS:
+        return Detection(why=f"it reported {keys} keys and {knobs} knobs, "
+                             "which isn't a pad this protocol can describe")
+
+    probe = Layout(keys, knobs, rows=keys, cols=1)      # geometry irrelevant here
+    expected = set(probe.control_for_action)
+
+    try:
+        replies = _exchange(device.path, proto.native_read(device.report_id, 1))
+    except ReadError as e:
+        return Detection(why=f"it answered the first query but not the second: {e}")
+
+    seen, bindings = set(), {}
+    for reply in replies:
+        if len(reply) < 13 or reply[1] != proto.MAGIC_READ:
+            continue
+        action, layer = reply[2], reply[3]
+        seen.add(action)
+        if action not in expected or layer != 1:
+            continue
+        control = probe.control_for_action[action]
+        decoded = decode_config(reply)
+        if decoded:
+            bindings[control] = decoded[2]
+
+    missing = expected - seen
+    if missing:
+        return Detection(why=f"it described {keys} keys and {knobs} knobs but "
+                             f"didn't report {len(missing)} of them, so this "
+                             "isn't the protocol it speaks")
+
+    return Detection(speaks=True, keys=keys, knobs=knobs,
+                     layers=proto.LAYERS, bindings=bindings)
+
+
+def detection_report(device, detected):
+    """A block of text to paste into an issue when adding a new pad."""
+    lines = [f"Device: {device.vid}:{device.pid}",
+             f"Name:   {device.name or 'not reported'}",
+             f"Node:   {device.path}, report id {device.report_id}", ""]
+    if not detected.speaks:
+        lines += ["This pad did NOT answer the 1189:8840 protocol.",
+                  f"Reason: {detected.why}"]
+        return "\n".join(lines)
+    lines += [f"The pad reports {detected.keys} keys and {detected.knobs} knobs.",
+              f"It answered a layer read for every slot that implies.", "",
+              "Layer 1 as read from the pad:"]
+    for control, binding in sorted(detected.bindings.items(),
+                                   key=lambda kv: action_byte(kv[0])):
+        lines.append(f"  0x{action_byte(control):02x}  {control:<12} {binding.label()}")
+    return "\n".join(lines)

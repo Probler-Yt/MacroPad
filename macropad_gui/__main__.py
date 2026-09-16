@@ -35,7 +35,8 @@ def cmd_doctor(_):
 def cmd_state(_):
     s = core.State()
     print(f"{DIM}{s.path}{'' if s.path.exists() else '  (not created yet)'}{O}\n")
-    for c in core.CONTROL_IDS:
+    print(f"{DIM}layout: {s.layout.describe()}{O}\n")
+    for c in s.layout.control_ids:
         e = s.get(c)
         byte = f"0x{core.action_byte(c):02x}"
         if e.unknown:
@@ -44,6 +45,26 @@ def cmd_state(_):
             print(f"  {c:<12} {DIM}{byte}{O}  {e.binding.label():<24} "
                   f"{DIM}{e.written}{O}")
     return 0
+
+
+def cmd_detect(_):
+    d = core.diagnose(keyd=False)
+    if not d.device:
+        print(f"{R}No pad found at all.{O}")
+        return 1
+    print(f"{B}Asking {d.device.vid}:{d.device.pid} on {d.device.path}{O}")
+    print(f"{DIM}This only reads. Nothing is configured.{O}\n")
+    found = core.detect(d.device)
+    print(core.detection_report(d.device, found))
+    if found.speaks:
+        lay = found.layout
+        print(f"\n{G}It speaks this protocol.{O}")
+        print(f"Best guess at the shape: {lay.describe()}. The pad reports how "
+              f"many\nkeys it has, not how they're arranged, so check that "
+              f"against yours.")
+        return 0
+    print(f"\n{Y}It didn't answer properly, so the app won't write to it.{O}")
+    return 1
 
 
 def cmd_write(a):
@@ -78,6 +99,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd")
     sub.add_parser("doctor", help="check the pad is connected and writable")
     sub.add_parser("state", help="show what this tool believes is on the pad")
+    sub.add_parser("detect", help="ask an unrecognised pad what it is (read only)")
     w = sub.add_parser("write", help="write one binding and record it")
     w.add_argument("control")
     w.add_argument("keys", nargs="?", help="e.g. 'ctrl+c' or 'a,b,c'")
@@ -92,7 +114,8 @@ def main():
             print("Install Qt for Python:  sudo pacman -S pyside6")
             return 1
         return run()
-    return {"doctor": cmd_doctor, "state": cmd_state, "write": cmd_write}[a.cmd](a)
+    return {"doctor": cmd_doctor, "state": cmd_state, "write": cmd_write,
+            "detect": cmd_detect}[a.cmd](a)
 
 
 if __name__ == "__main__":

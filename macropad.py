@@ -223,6 +223,47 @@ def native_media(report_id, action, usage, layer=1):
     return [bytes([report_id]) + bytes(data), native_commit(report_id)]
 
 
+# ----------------------------------------------------------- reading back
+#
+# The pad can be read, which we only found by capturing the vendor software's
+# "view settings" button. Two commands, both answered on the interrupt IN
+# endpoint of the same report id:
+#
+#   0xFB  what are you?    reply: 03 fb <keys> <knobs>
+#   0xFA  send me a layer  reply: one report per control, magic 0xFA, then
+#                                 nothing more
+#
+# Observed, reading layer 1:
+#   03 fa 0f 03 01 02 ...          request (trailing bytes were uninitialised
+#                                  memory in the vendor program; zeros work)
+#   03 fa 02 01 01 00 ... 01 05 17 key2 is ctrl+alt+t
+#   03 fa 10 01 02 00 ... 01 ea 00 dial 1 left is volume down
+
+MAGIC_INFO = 0xFB
+MAGIC_READ = 0xFA
+KEY_SLOTS = 0x0F      # the firmware keeps 15 key slots whatever the pad has
+KNOB_SLOTS = 3
+LAYERS = 3
+
+
+def native_info(report_id):
+    """Ask the pad what it is. Reply carries the key and knob counts."""
+    data = bytearray(REPORT_LEN - 1)
+    data[0] = MAGIC_INFO
+    return bytes([report_id]) + bytes(data)
+
+
+def native_read(report_id, layer=1):
+    """Ask the pad for every control in one layer."""
+    data = bytearray(REPORT_LEN - 1)
+    data[0] = MAGIC_READ
+    data[1] = KEY_SLOTS
+    data[2] = LAYERS
+    data[3] = layer
+    data[4] = 2
+    return bytes([report_id]) + bytes(data)
+
+
 # ------------------------------------------------------- legacy protocol
 #
 # The older format. Unlike Extended, a single binding is a *sequence* of

@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <a href="#-install-it-the-whole-world-is-counting-on-you">Install</a> &nbsp;|&nbsp;
+  <a href="#-install">Install</a> &nbsp;|&nbsp;
   <a href="#-your-first-binding">First binding</a> &nbsp;|&nbsp;
   <a href="#-when-something-goes-wrong">Help</a> &nbsp;|&nbsp;
   <a href="#-other-pads-in-this-family">Other pads</a> &nbsp;|&nbsp;
@@ -37,7 +37,7 @@
 > ```
 > curl -fsSL https://raw.githubusercontent.com/Probler-Yt/MacroPad/main/install.sh | bash
 > ```
-> Never used a terminal? Perfect. [The step by step guide](#-install-it-the-whole-world-is-counting-on-you) was written for you.
+> Never used a terminal? Perfect. [The step by step guide](#-install) was written for you.
 
 ---
 
@@ -73,13 +73,13 @@ Probably, if yours looks like this:
 - Came with software called **`MINI_KEYBOARD.exe`**, or a download link to it.
 - Plugs in with USB and works as a keyboard straight away.
 
-To be sure, open a terminal ([how?](#step-1-open-a-terminal)), type `lsusb` and press Enter. Look for this line:
+To check, run `lsusb` in a terminal and look for a line like:
 
 ```
 Bus 001 Device 011: ID 1189:8840 Acer Communications & Multimedia USB Composite Device
 ```
 
-The important bit is **`1189:8840`**. Don't worry about the "Acer" part: it isn't made by Acer, these pads just borrow that ID.
+The part that matters is **`1189:8840`**. Ignore "Acer": these pads borrow that ID and have nothing to do with Acer.
 
 > [!NOTE]
 > **Different number, like `1189:8890` or `1189:8842`?** That's a sibling of this pad with a different layout. MacroPad will spot it and tell you it isn't supported yet, rather than risk sending it the wrong thing. [ch57x-keyboard-tool](https://github.com/kriomant/ch57x-keyboard-tool) supports several of them today, and [you can help add yours here](#-other-pads-in-this-family).
@@ -95,7 +95,10 @@ The important bit is **`1189:8840`**. Don't worry about the "Acer" part: it isn'
 | 🎵 **Media keys** | Play/pause, next, previous, stop, volume, mute, **screen brightness**, calculator, email, browser, my computer. |
 | 🚫 **Nothing** | Switch a key off completely, so a stray press does nothing. |
 | 🔄 **Rotate view** | Stand your pad up or lay it flat. The drawing turns to match. |
-| 🧠 **Remembers what it wrote** | The pad can't be read back, so the app keeps its own notes and marks anything it doesn't know. |
+| 📖 **Reads your pad** | Opens and asks the pad what it's actually holding, so you start from the truth. |
+| 🔎 **Identifies unknown pads** | Asks an unrecognised pad about itself, read only, and refuses to write if it doesn't answer properly. |
+| 📐 **Layout editor** | Drag the keys around until the drawing matches your pad. |
+| 🧠 **Remembers what it wrote** | Keeps its own notes too, and marks anything it isn't sure about rather than guessing. |
 | 🩺 **Tells you what's wrong** | Unplugged? No permission? Wrong pad? You get a plain explanation and the exact fix, with a copy button. |
 | 📥 **Imports from the vendor app** | Set your pad up on Windows before? Bring that setup across. |
 
@@ -125,6 +128,7 @@ Both write straight to the pad's own memory, so you can even use both. Pick whic
 | Key sequences with delays | Not yet | Yes |
 | Mouse actions, LED modes, extra layers | Not yet | Yes |
 | Record a shortcut by pressing it | Yes | No |
+| Read what's on the pad | Yes | No |
 | Install and permissions | One line does both | AUR, a download or `cargo install`; rule by hand |
 
 **Short version:** new to Linux, or just want to click things? MacroPad. Want every feature, a different pad, or a config file you can keep in git? ch57x-keyboard-tool.
@@ -133,25 +137,19 @@ Other people have built GUIs for these pads too, mostly for the smaller 3 and 6 
 
 ---
 
-## 🚀 Install it (the whole world is counting on you)
+## 🚀 Install
 
-Welcome. Maybe this is your first week on Linux. Maybe it's your first *hour*. Either way, you are about to do something brave and important, and I'm going to walk you through every single click. Nothing here can break your computer. Deep breath. Let's save the world.
+One command does everything: the app, the Qt libraries if you need them, the menu entry, and the USB permission rule. It asks before each step that needs your password, and it's safe to run again to update.
 
-### Step 0: Plug in your pad
-
-Plug the macro pad into a USB port. That's it. Step zero complete. You're doing amazing.
+If you're comfortable in a terminal, [skip to the command](#step-2-copy-this-line). The steps below spell it out for anyone newer to Linux, since these pads are a lot of people's first reason to open one.
 
 ### Step 1: Open a terminal
 
-A **terminal** is a window where you type instructions instead of clicking. It looks scary. It isn't. Think of it as a very literal assistant who does exactly what you type.
-
-How to open one:
+A terminal is a window where you type commands instead of clicking. Nothing below can damage your system.
 
 - **KDE Plasma** (CachyOS, Bazzite, Kubuntu, Fedora KDE, KDE neon): press the **Meta key** (the one with the Windows logo), type **`Konsole`**, press **Enter**.
 - **GNOME** (Ubuntu, Fedora, Pop!_OS): press the **Meta key**, type **`Terminal`**, press **Enter**.
 - **Almost anywhere**: try pressing **`Ctrl` + `Alt` + `T`** together.
-
-A window with a blinking cursor appears. Hello, terminal. 👋
 
 ### Step 2: Copy this line
 
@@ -168,46 +166,40 @@ In plain words: "download the MacroPad installer from GitHub (`curl`), and run i
 
 </details>
 
-### Step 3: Paste it into the terminal
+### Step 3: Paste it and press Enter
 
 > [!IMPORTANT]
-> **In a terminal, pasting is `Ctrl` + `Shift` + `V`**, not `Ctrl+V`. This catches out everyone coming from Windows. (Right click, then **Paste** works too.)
-
-Paste it, then press **Enter**.
+> Pasting into a terminal is **`Ctrl` + `Shift` + `V`**, not `Ctrl+V`. Right click, then Paste, also works.
 
 ### Step 4: Answer the questions
 
-The installer explains what it's doing as it goes. It will ask a couple of questions like **"Add it now? [Y/n]"**. Just press **Enter** to say yes.
+The installer says what it's doing as it goes, and asks before anything that needs your password. Pressing Enter accepts the default.
 
-When it asks for your **password**, type the password you use to log in to your computer and press **Enter**.
+It needs the password for two things: installing Qt on systems that don't have it, and writing one permission file so the app can talk to your pad. Everything else stays in your home folder.
 
-> [!WARNING]
-> **Nothing appears while you type your password.** No dots, no stars, nothing. That's normal! Linux hides it completely so nobody can even count the letters. Just type it and press Enter. If you get it wrong it'll simply ask again.
+> [!NOTE]
+> Nothing appears on screen while you type a password in a terminal. No dots, no stars. That's deliberate, not a frozen prompt.
 
-It needs your password for two small things: installing Qt (the toolkit that draws the window) on some systems, and adding one file that lets the app talk to your pad. Everything else goes in your own home folder.
+First run downloads around 100 MB on some systems. You'll see **All done.** when it's finished.
 
-The first install downloads about 100 MB on some systems, so give it a minute. You'll see **All done.** in green when it's finished.
+### Step 5: Replug the pad
 
-### Step 5: Unplug the pad and plug it back in
-
-This makes Linux notice the new permission. Unplug. Count to two. Plug back in.
+Unplug it and plug it back in, so Linux applies the new permission.
 
 ### Step 6: Open MacroPad
 
-Open your app menu (press the **Meta key**), type **`MacroPad`**, and click it. 🎉
+Open your app menu, type **MacroPad**, and click it.
 
 <p align="center">
   <img src="docs/images/first-launch.png" width="820" alt="MacroPad on its first launch: every key is striped because the app hasn't written anything yet">
 </p>
 
-**Everything is striped the first time. That's correct.** The app hasn't written anything to your pad yet, and the pad has no way of telling it what's already there. You'll fix that in about thirty seconds.
+A **green dot** and **Pad ready** at the bottom left means it's working. Anything else, and the panel on the right explains it, or see [When something goes wrong](#-when-something-goes-wrong).
 
-Look at the bottom left. A **green dot** and **Pad ready** means everything worked. If you see something else, the panel on the right will tell you exactly what to do, or jump to [When something goes wrong](#-when-something-goes-wrong).
+The app reads your pad when it opens, so the drawing should fill in with whatever is already on it. Keys still showing as hatched are ones it couldn't read; press **Read pad** to ask again.
 
 > [!TIP]
-> Want it on your taskbar? Right click **MacroPad** in your app menu and choose **Pin to Task Manager** (Plasma) or **Pin to Dash** (GNOME).
-
-**You did it.** The world is saved. Probably. Let's make sure by setting up a key.
+> To keep it handy: right click **MacroPad** in your app menu and choose **Pin to Task Manager** (Plasma) or **Pin to Dash** (GNOME).
 
 ---
 
@@ -215,7 +207,7 @@ Look at the bottom left. A **green dot** and **Pad ready** means everything work
 
 ### 1. Click a key on the drawing
 
-Pick any key. It gets an orange outline, and the panel on the right shows what it does now.
+It gets an orange outline, and the panel on the right shows what it currently does.
 
 ### 2. Type what you want it to do
 
@@ -246,7 +238,7 @@ Click **Media key** and pick from the list. Volume and brightness on the knobs i
 
 ### Or make it do nothing
 
-Bound something you don't want any more? Click **Nothing**, then write it. The key goes quiet: pressing it does nothing at all. Keys set this way show **Nothing** in grey on the drawing.
+To clear a binding, click **Nothing** and write it. Keys set this way show **Nothing** in grey.
 
 <p align="center">
   <img src="docs/images/step-nothing.png" width="820" alt="Key 5 set to Nothing, waiting to be written, with key 1 already showing Nothing in grey">
@@ -266,9 +258,9 @@ The bottom bar tells you exactly what happened. Green means it worked.
   <img src="docs/images/step-written.png" width="820" alt="After writing: the keys are solid white and the bottom bar says Wrote 3 changes to the pad">
 </p>
 
-### 4. Press the key on your pad
+### 4. Press the key
 
-It does the thing. You can close the app now. **Your bindings live on the pad itself**, so they keep working after a reboot, on another computer, even on Windows. Nothing needs to stay running.
+**Your bindings live on the pad itself**, so they keep working after a reboot, on another computer, even on Windows. Nothing stays running in the background, and you can close the app.
 
 ---
 
@@ -289,6 +281,18 @@ You can also click the three lines of text under each knob. Every click of a tur
 
 ---
 
+## 📐 If the drawing doesn't match your pad
+
+Press **Edit layout** at the bottom. The keys start wobbling, and you can drag them around until the picture matches the pad in front of you. Two keys swap when you drop one onto the other, so nothing is ever lost.
+
+The boxes along the bottom set the grid size and how many keys and knobs there are. **Done** saves it, **Cancel** puts it back.
+
+<p align="center">
+  <img src="docs/images/edit-layout.png" width="820" alt="Edit layout mode: keys outlined and being dragged into a new position">
+</p>
+
+This only changes the picture. It never writes anything to the pad. It's there because the pad reports how many keys it has but not how they're arranged, so on a pad we haven't seen before the first guess can be wrong.
+
 ## 🔄 Rotate view
 
 Some people stand the pad up with the knobs on top. Some lay it flat with the knobs on the right. Click **Rotate view** at the bottom and the drawing turns to match. It remembers your choice.
@@ -307,17 +311,24 @@ Only do this if nothing has changed on the pad since that capture.
 
 ---
 
-## ❓ Why does it say "Unknown"?
+## 📖 Reading your pad
 
-Because **these pads are write only.** You can send them new bindings, but there's no known way to ask one what it's currently set to. Even the official Windows app opens with every key blank.
+MacroPad asks the pad what it's holding when it opens, so the drawing shows what's really on the hardware rather than what some file thinks. There's a **Read pad** button at the bottom to ask again at any time.
 
-So the app keeps its own notes of everything it has successfully written, and it's careful about it:
+Anything you've changed but not written yet is left alone when it reads, since that's your intent, not the pad's state.
 
-- If a write finishes, the key is marked with what was written.
-- If a write fails before anything reaches the pad, nothing changes.
-- If a write fails **halfway**, that key goes back to **Unknown**, because the honest answer is "no idea". Just write it again.
+### So what does "Unknown" mean now?
 
-Striped keys aren't broken. They're just keys this app hasn't touched yet.
+Hatched keys are ones the app hasn't been told about: either the pad didn't answer, or you haven't pressed Read pad. Press it and they fill in.
+
+<p align="center">
+  <img src="docs/images/read-pad.png" width="820" alt="The app after reading the pad: every key and dial filled in from the hardware">
+</p>
+
+The app still keeps its own notes, because a write can fail halfway. If that happens, that one control goes back to Unknown rather than claiming either the old or the new binding, and reading the pad clears it up.
+
+> [!NOTE]
+> This took a while to work out. The project was built assuming these pads were write only, because nothing documented a way to read them and the first captures only recorded traffic in one direction. They can be read. The story is in [For the nerds](#-for-the-nerds).
 
 ---
 
@@ -429,7 +440,24 @@ Siblings come in other sizes, and several share vendor ID `1189`. **They don't a
   <img src="docs/images/unsupported.png" width="820" alt="The app explaining that it found a 1189:8890 pad that it doesn't support yet">
 </p>
 
-### You can add yours
+### Detecting a pad automatically
+
+If MacroPad sees a pad it doesn't recognise, it offers to **ask the pad what it is**. That's read only, and it needs the pad to pass two tests before the app will write anything to it:
+
+1. It answers the `0xFB` query with a sensible key and knob count.
+2. It then reports a full layer, describing exactly the control slots that count implies.
+
+A pad from a different family fails one of those, and the app leaves it alone rather than guessing. On the command line:
+
+```
+macropad detect
+```
+
+The pad reports how many keys and knobs it has, but not how they're arranged, so the app's first guess at rows and columns may be wrong. Check the drawing against the real thing.
+
+If your pad passes, please [open an issue](https://github.com/Probler-Yt/MacroPad/issues) with the output so it can be added to the known list and everyone else gets it working first time.
+
+### Adding one by hand
 
 If you'd like your pad in MacroPad too, you're exactly who this project needs. It's the same process used for this one. You'll need the vendor software (`MINI_KEYBOARD.exe`) and Wine.
 
@@ -545,6 +573,41 @@ rOzzy1987's format is for different product IDs, which is why porting it to this
 </details>
 
 <details>
+<summary><b>Reading the pad, and how we nearly missed it</b></summary>
+
+The project ran for weeks on the assumption that these pads were write only. Two things caused that:
+
+- Nothing documented a read. Neither rOzzy1987's project nor ch57x-keyboard-tool implements one.
+- The capture tool only recorded **outgoing** transfers. So even though the pad had been answering all along, nothing was ever written down.
+
+What settled it was noticing that the vendor software has a "view settings" button, and that it showed bindings written by MacroPad. It couldn't have known those from a file, so it was asking the pad. Capturing both directions gave the answer.
+
+Two query commands, both answered on the interrupt IN endpoint of the same report id:
+
+```
+03 fb ...                       what are you?
+03 fb 0c 02                     reply: 12 keys, 2 knobs
+
+03 fa 0f 03 01 02 ...           send me layer 1
+                                (15 key slots, 3 layers, layer 1, 2 knobs)
+03 fa 02 01 01 00 ... 01 05 17  key 2 is ctrl+alt+t
+03 fa 10 01 02 00 ... 01 ea 00  dial 1 left is volume down
+                                ... one report per control, then silence
+```
+
+Replies use the same layout as a config write, with `0xFA` in place of the `0xFD` magic. Media replies carry a count of 1 where writes send 2; both are accepted.
+
+Three things fell out of it:
+
+- **The pad reports its own layout**, so key and knob counts don't have to be guessed from the USB ID.
+- **There are three layers**, and the firmware keeps 15 key slots and 3 knobs whatever the hardware has. Ours answers for 6 controls that don't physically exist.
+- **The dial mapping is confirmed from the other direction.** Reading back what we had written returns exactly the mapping we assumed, which is stronger evidence than a write that appeared to work.
+
+The vendor's request has trailing bytes that change between runs and look like uninitialised memory from the Windows program. Zeros work fine.
+
+</details>
+
+<details>
 <summary><b>usbmon only shows you 32 bytes</b></summary>
 
 The kernel's `usbmon` text interface caps captured data at 32 bytes per transfer. Every line in a capture is exactly 32 bytes, even though the reports are 65. For single keys and media that's plenty. For long key sequences, anything past the 10th key lands in bytes nobody has seen yet. If you're capturing long macros, use Wireshark or the binary `/dev/usbmonN` interface instead.
@@ -572,7 +635,7 @@ The app's permission check reads `udevadm info` to see whether the device got th
 <details>
 <summary><b>Where the app keeps its notes</b></summary>
 
-`~/.config/macropad/state-1189-8840.json` holds everything the app has successfully written. Every entry is exactly a command the CLI understands:
+`~/.config/macropad/state-1189-8840.json` holds what the app last read from or wrote to the pad. Since the pad can be read, this is a cache rather than the source of truth. Every entry is exactly a command the CLI understands:
 
 ```json
 {
@@ -646,14 +709,18 @@ tests/                   real captures and the tests that replay them
 - [x] Keys, shortcuts and media keys on `1189:8840`
 - [x] Both knobs, all three actions each
 - [x] Upright and flat views
+- [x] Reading the pad, so the app shows what's really on it
 - [x] One line installer for any distro
-- [ ] **Key sequences with delays** (ch57x-keyboard-tool shows the likely format; one capture to confirm)
-- [ ] Layers 2 and 3, and LED modes
+- [ ] **Key sequences with delays**. Reading the pad shows two-key sequences stored in the layout we assumed, so this is close
+- [ ] **Layers 2 and 3**, which the pad turns out to have
+- [ ] LED modes
 - [ ] AUR package, so Arch users can install it like anything else
 - [ ] Knob press to toggle brightness between 0% and 100%
 - [ ] Save and switch between named profiles (gaming, editing, streaming)
 - [ ] **Windows and macOS** via a cross platform USB layer
-- [ ] **More pads**: every capture sent in gets us closer
+- [x] Detecting a pad's key and knob counts by asking it
+- [x] A layout editor, since the pad doesn't report how its keys are arranged
+- [ ] **More pads**: every report sent in gets us closer
 
 ---
 

@@ -139,6 +139,13 @@ def scene_first_launch():
     save(w, "first-launch")
 
 
+def scene_read():
+    w = window(bindings=DEMO)
+    w._say("Read 18 controls from the pad.", A.GOOD)
+    select(w, "dial1-left")
+    save(w, "read-pad")
+
+
 def scene_select_and_type():
     w = window(bindings={k: v for k, v in DEMO.items() if k.startswith("dial")})
     select(w, "key2")
@@ -189,6 +196,19 @@ def scene_written():
     select(w, "key10")
     w._say("Wrote 3 changes to the pad.", A.GOOD)
     save(w, "step-written")
+
+
+def scene_edit_layout():
+    w = window(bindings=DEMO)
+    w._edit_layout(True)
+    spots = {k: (r, c) for k, r, c
+             in __import__("macropad_gui.padview", fromlist=["padview"])
+             ._key_grid(w.pad.layout, w.pad.orientation)}
+    w.pad.drag = "key2"
+    w.pad.drag_at = w.pad.keys["key11"].center()
+    w.pad.drop = spots["key11"]
+    save(w, "edit-layout")
+    w._edit_layout(False, keep=False)
 
 
 def scene_flat():
