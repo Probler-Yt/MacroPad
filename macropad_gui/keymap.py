@@ -31,6 +31,8 @@ for _row, _start in (("qwertyuiop", 16), ("asdfghjkl", 30), ("zxcvbnm", 44)):
         EVDEV[_start + _i] = _c
 for _i in range(1, 11):
     EVDEV[58 + _i] = f"f{_i}"                      # F1 = 59 .. F10 = 68
+for _i in range(13, 25):
+    EVDEV[170 + _i] = f"f{_i}"                     # F13 = 183 .. F24 = 194
 
 for _name in EVDEV.values():
     assert _name in proto.KEYCODES, _name

@@ -211,6 +211,21 @@ def scene_edit_layout():
     w._edit_layout(False, keep=False)
 
 
+def scene_action():
+    from macropad_gui import actions as act
+    b = dict(DEMO)
+    b["key5"] = B(keys="f14")
+    b["key9"] = B(keys="f15")
+    with mock.patch.object(act, "listener_pid", return_value=4242), \
+         mock.patch.object(act, "autostart_enabled", return_value=True):
+        w = window(bindings=b)
+        w.actions.set("f14", act.Action("url", "github.com/Probler-Yt/MacroPad"))
+        w.actions.set("f15", act.Action("app", "spotify", "Spotify"))
+        select(w, "key5")
+        w._say("Key 5 is set: Open github.com.", A.GOOD)
+        save(w, "action")
+
+
 def scene_flat():
     w = window(bindings=DEMO)
     w.pad.set_orientation("flat")
@@ -354,6 +369,81 @@ def scene_social():
     p.end()
     img.save(str(OUT / "social-preview.png"))
     print("wrote docs/images/social-preview.png")
+
+
+def _demo_with_states():
+    b = dict(DEMO)
+    b["key1"] = B(none=True)
+    return b
+
+
+def scene_theme_blueprint():
+    _full_theme("blueprint")
+
+
+def scene_theme_sketch():
+    _full_theme("sketch")
+
+
+def _full_theme(key):
+    from macropad_gui import themes
+    A.apply_theme(QApplication.instance(), key)
+    try:
+        w = window(bindings=_demo_with_states())
+        w.state.entries.pop((1, "key9"), None)          # show the unknown style
+        w.desired["key10"] = B(keys="ctrl+p")          # and an unwritten change
+        select(w, "dial1-left")
+        save(w, f"theme-{key}")
+    finally:
+        A.apply_theme(QApplication.instance(), themes.DEFAULT)
+
+
+def scene_theme_gallery():
+    """Every theme side by side: just the pad, same layout."""
+    from macropad_gui import themes
+    names, tiles = [], []
+    try:
+        for t in themes.THEMES.values():
+            A.apply_theme(QApplication.instance(), t.key)
+            pv = padview.PadView()
+            pv.resize(300, 560)
+            looks = {c: padview.Look(b.label(), known=True, quiet=b.none)
+                     for c, b in _demo_with_states().items()}
+            looks["key9"] = padview.Look()
+            looks["key10"] = padview.Look("Ctrl+P", known=True, pending=True)
+            pv.looks = looks
+            pv.current = "dial1-left"
+            tile = pv.grab().toImage()
+            tile.setDevicePixelRatio(1)       # draw it pixel for pixel
+            tiles.append(tile)
+            names.append(t.name)
+    finally:
+        A.apply_theme(QApplication.instance(), themes.DEFAULT)
+
+    tw = tiles[0].width()
+    th = tiles[0].height()
+    gap, label = 14 * 2, 34 * 2
+    img = QImage(len(tiles) * tw + (len(tiles) - 1) * gap, th + label,
+                 QImage.Format_ARGB32)
+    img.fill(Qt.transparent)
+    p = QPainter(img)
+    p.setRenderHint(QPainter.Antialiasing)
+    for i, (tile, name) in enumerate(zip(tiles, names)):
+        x = i * (tw + gap)
+        clip = __import__("PySide6.QtGui", fromlist=["QPainterPath"]).QPainterPath()
+        clip.addRoundedRect(QRectF(x, 0, tw, th), 24, 24)
+        p.setClipPath(clip)
+        p.drawImage(x, 0, tile)
+        p.setClipping(False)
+        f = QFont(QApplication.font())
+        f.setPixelSize(26)
+        p.setFont(f)
+        p.setPen(QColor("#8a8a8a"))
+        p.drawText(QRectF(x, th + 8, tw, label - 8), Qt.AlignHCenter | Qt.AlignTop, name)
+    p.end()
+    path = OUT / "themes.png"
+    img.save(str(path))
+    print("wrote", path.relative_to(ROOT))
 
 
 def scene_icon():

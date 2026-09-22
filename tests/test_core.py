@@ -143,7 +143,8 @@ class ReadingThePad(unittest.TestCase):
 
     def test_our_requests_match_the_vendors(self):
         info, read1, read2, read3 = self.sent
-        self.assertEqual(proto.native_info(3)[:2], info[:2])
+        # the vendor repeats the command byte; match it rather than assume
+        self.assertEqual(proto.native_info(3)[:4], info[:4])
         for layer, sent in ((1, read1), (2, read2), (3, read3)):
             # the vendor's trailing bytes are uninitialised memory; ours are zero
             self.assertEqual(proto.native_read(3, layer)[:6], sent[:6])
@@ -382,6 +383,33 @@ class Arranging(unittest.TestCase):
             self.assertEqual(core.State(path).layout, moved)
 
 
+class OtherSystems(unittest.TestCase):
+
+    def test_a_non_linux_system_gets_an_explanation(self):
+        from unittest import mock
+        with mock.patch.object(core, "on_linux", return_value=False):
+            d = core.diagnose()
+        self.assertEqual(d.status, "unsupported-os")
+        self.assertFalse(d.ready)
+        self.assertIsNone(d.device)
+
+    def test_the_permission_rule_covers_the_whole_vendor(self):
+        """A rule tied to one product id strands everyone with a sibling pad."""
+        self.assertIn('idVendor}}=="1189"'.replace("}}", "}"), core.RULE_LINE)
+        self.assertNotIn("idProduct", core.RULE_LINE)
+
+    def test_an_unreadable_unknown_pad_is_told_how_to_fix_it(self):
+        from unittest import mock
+        other = [{"path": "/dev/hidraw4", "vid": "1189", "pid": "8890",
+                  "report_id": 0, "writable": False, "name": ""}]
+        with mock.patch.object(proto, "find_devices", return_value=other), \
+             mock.patch.object(core, "_keyd_warning", return_value=None):
+            d = core.diagnose()
+        self.assertEqual(d.status, "unsupported")
+        self.assertTrue(d.fix)
+        self.assertIn("60-macropad.rules", d.fix[0])
+
+
 class Layouts(unittest.TestCase):
 
     def test_action_bytes_agree_with_the_protocol_module(self):
@@ -593,6 +621,7 @@ class GuiSmoke(unittest.TestCase):
         except ImportError:
             self.skipTest("PySide6 not installed")
         from unittest import mock
+        from macropad_gui import actions as act_mod
         with tempfile.TemporaryDirectory() as d, \
                 mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": d}):
             qa = QApplication.instance() or QApplication([])
@@ -626,6 +655,25 @@ class GuiSmoke(unittest.TestCase):
             w._edit_layout(False, keep=False)
             self.assertEqual(w.state.layout, core.DEFAULT_LAYOUT)
             self.assertFalse(w.pad.editing)
+            # an action typed for one key must not leak into the next one
+            w.pad.select("key2"); w._refresh()
+            w.inspector.mode_action.click()
+            w.inspector.action_edit.setText("github.com")
+            w.inspector._action_edited()
+            w.pad.select("key3"); w._refresh()
+            w.inspector.mode_action.click()
+            self.assertEqual(w.inspector.action_edit.text(), "")
+            # the picker: automatic avoids F13, and a chosen key is used
+            w.desired.clear(); w.pending_actions.clear()
+            w.pad.select("key4"); w._refresh()
+            w._host_action("key4", act_mod.Action("url", "a.com"))
+            self.assertEqual(w.desired["key4"].keys, "f14")
+            w._host_action("key4", act_mod.Action("url", "a.com"), "f22")
+            self.assertEqual(w.desired["key4"].keys, "f22")
+            opts = dict(w._trigger_options("key6"))
+            self.assertEqual(opts["f22"], "Key 4")          # taken, shown as whose
+            self.assertIsNone(opts["f15"])
+            w.desired.clear(); w.pending_actions.clear()
             w._changed("key1", core.Binding(media="mute"))
             self.assertEqual(w._pending(), ["key1"])
             # choosing Nothing marks the control as changed straight away
@@ -636,3 +684,53 @@ class GuiSmoke(unittest.TestCase):
             self.assertIn("key5", w._pending())
             w.desired.clear()
             w.close()
+
+
+class ThemedDrawing(unittest.TestCase):
+    """Every theme, every shape, both ways up, switched live."""
+
+    def test_switching_themes_live(self):
+        try:
+            os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+            from PySide6.QtWidgets import QApplication
+            from macropad_gui import app, padview, themes
+        except ImportError:
+            self.skipTest("PySide6 not installed")
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": d}):
+            qa = QApplication.instance() or QApplication([])
+            w = app.Window()
+            w.timer.stop()
+            for t in themes.THEMES.values():
+                w._set_theme(t.key)
+                self.assertEqual(padview.THEME.key, t.key)
+                self.assertEqual(padview.INK.name(), t.ink)     # changed in place
+                for lay in (core.DEFAULT_LAYOUT, core.Layout(15, 3, 3, 5)):
+                    w.pad.set_layout(lay)
+                    for o in ("upright", "flat"):
+                        w.pad.set_orientation(o)
+                        w.pad.grab()
+            self.assertEqual(w.settings.value("theme"), list(themes.THEMES)[-1])
+            w._set_theme(themes.DEFAULT)
+            w.close()
+
+    def test_pencil_lines_are_the_same_every_time(self):
+        try:
+            from PySide6.QtGui import QPainterPath
+            from PySide6.QtCore import QRectF
+            from macropad_gui import padview
+        except ImportError:
+            self.skipTest("PySide6 not installed")
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(0, 0, 96, 96), 5, 5)
+        a = padview._wobble_path(path, 1.6, padview._seed("key4"))
+        b = padview._wobble_path(path, 1.6, padview._seed("key4"))
+        c = padview._wobble_path(path, 1.6, padview._seed("key5"))
+        self.assertEqual([(p.x(), p.y()) for p in a.toFillPolygon()],
+                         [(p.x(), p.y()) for p in b.toFillPolygon()])
+        self.assertNotEqual([(p.x(), p.y()) for p in a.toFillPolygon()],
+                            [(p.x(), p.y()) for p in c.toFillPolygon()])
+        # it wanders, but only a little
+        box = a.boundingRect()
+        self.assertLess(abs(box.width() - 96), 5)

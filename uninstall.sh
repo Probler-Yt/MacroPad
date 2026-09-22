@@ -15,6 +15,15 @@ ask() {
     case "$answer" in [yY]*) return 0 ;; *) return 1 ;; esac
 }
 
+# stop the actions listener if it's running, and don't start it at login
+LOCK="${XDG_RUNTIME_DIR:-$HOME/.cache}/macropad-actions.lock"
+pid="$(cat "$LOCK" 2>/dev/null || true)"
+case "$pid" in ''|*[!0-9]*) pid="" ;; esac
+if [ -n "$pid" ] && tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q "macropad.*actions"; then
+    kill "$pid" 2>/dev/null || true
+fi
+rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/macropad-actions.desktop"
+
 rm -rf "$DATA/macropad"
 rm -f "$HOME/.local/bin/macropad" "$DATA/applications/macropad.desktop" \
       "$DATA/icons/hicolor/scalable/apps/macropad.svg"

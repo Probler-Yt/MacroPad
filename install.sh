@@ -22,7 +22,7 @@ BIN="$HOME/.local/bin"
 DESKTOP="$DATA/applications/macropad.desktop"
 ICON="$DATA/icons/hicolor/scalable/apps/macropad.svg"
 RULE="/etc/udev/rules.d/60-macropad.rules"
-RULE_LINE='KERNEL=="hidraw*", ATTRS{idVendor}=="1189", ATTRS{idProduct}=="8840", TAG+="uaccess"'
+RULE_LINE='KERNEL=="hidraw*", ATTRS{idVendor}=="1189", TAG+="uaccess"'
 
 if [ -t 1 ]; then
     O=$'\e[38;5;208m'; G=$'\e[32m'; R=$'\e[31m'; B=$'\e[1m'; D=$'\e[2m'; X=$'\e[0m'
@@ -169,6 +169,25 @@ command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1 || true
 # Plasma caches icon lookups; drop the cache so the new icon shows straight away.
 rm -f "${XDG_CACHE_HOME:-$HOME/.cache}/icon-cache.kcache" 2>/dev/null || true
 ok "MacroPad is in your app menu"
+
+# If the user turned background actions on and they're running, restart them
+# so they pick up the new code. Identified by the listener's own lock file and
+# checked against /proc, never by matching command lines, which would also hit
+# an editor or a grep that happens to mention it.
+ACTIONS_LOCK="${XDG_RUNTIME_DIR:-$HOME/.cache}/macropad-actions.lock"
+ACTIONS_AUTOSTART="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/macropad-actions.desktop"
+if [ -f "$ACTIONS_AUTOSTART" ] && [ -f "$ACTIONS_LOCK" ]; then
+    pid="$(cat "$ACTIONS_LOCK" 2>/dev/null || true)"
+    case "$pid" in ''|*[!0-9]*) pid="" ;; esac
+    if [ -n "$pid" ] && tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null \
+            | grep -q "macropad.*actions"; then
+        kill "$pid" 2>/dev/null || true
+        sleep 0.5
+        setsid -f "$BIN/macropad" actions \
+            >>"${XDG_RUNTIME_DIR:-$HOME/.cache}/macropad-actions.log" 2>&1 < /dev/null || true
+        ok "restarted background actions"
+    fi
+fi
 
 # -------------------------------------------------------------- 4. permission
 step "Letting the app talk to the pad"

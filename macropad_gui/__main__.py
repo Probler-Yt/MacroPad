@@ -67,6 +67,12 @@ def cmd_detect(_):
     return 1
 
 
+def cmd_actions(a):
+    """The background listener. Normally started by the app or at login."""
+    from . import actions
+    return actions.listen(debug=a.debug)
+
+
 def cmd_write(a):
     if a.control not in core.CONTROL_IDS:
         print(f"Unknown control. One of: {', '.join(core.CONTROL_IDS)}")
@@ -100,6 +106,9 @@ def main():
     sub.add_parser("doctor", help="check the pad is connected and writable")
     sub.add_parser("state", help="show what this tool believes is on the pad")
     sub.add_parser("detect", help="ask an unrecognised pad what it is (read only)")
+    ac = sub.add_parser("actions", help="run the listener that makes action keys work")
+    ac.add_argument("--debug", action="store_true",
+                    help="print every report the pad's keyboard sends")
     w = sub.add_parser("write", help="write one binding and record it")
     w.add_argument("control")
     w.add_argument("keys", nargs="?", help="e.g. 'ctrl+c' or 'a,b,c'")
@@ -115,7 +124,7 @@ def main():
             return 1
         return run()
     return {"doctor": cmd_doctor, "state": cmd_state, "write": cmd_write,
-            "detect": cmd_detect}[a.cmd](a)
+            "detect": cmd_detect, "actions": cmd_actions}[a.cmd](a)
 
 
 if __name__ == "__main__":

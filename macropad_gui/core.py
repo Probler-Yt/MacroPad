@@ -476,8 +476,11 @@ class Diagnosis:
 RULES_DIRS = ("/etc/udev/rules.d", "/run/udev/rules.d")
 SYSTEM_RULES = ("/usr/lib/udev/rules.d", "/lib/udev/rules.d")
 SUGGESTED_RULE = "60-macropad.rules"
-RULE_LINE = (f'KERNEL=="hidraw*", ATTRS{{idVendor}}=="{VID}", '
-             f'ATTRS{{idProduct}}=="{PID}", TAG+="uaccess"')
+# Vendor wide on purpose. Pads in this family have several product ids, and
+# a rule tied to one of them leaves everybody else unable to read their own
+# hardware, which is exactly the point at which they give up.
+RULE_LINE = f'KERNEL=="hidraw*", ATTRS{{idVendor}}=="{VID}", TAG+="uaccess"'
+
 
 
 def _uaccess_cutoff():
@@ -569,8 +572,23 @@ def _keyd_warning():
     return None
 
 
+def on_linux():
+    return sys.platform.startswith("linux")
+
+
 def diagnose(keyd=True):
     """keyd=False skips the keyd check, which shells out - the GUI polls."""
+    if not on_linux():
+        return Diagnosis(
+            "unsupported-os", f"MacroPad can't reach USB devices on {sys.platform}.",
+            detail=["The window works anywhere Qt does, but the part that talks "
+                    "to the pad reads Linux's /dev/hidraw, which this system "
+                    "doesn't have.",
+                    "On Windows, the pad's own vendor software or "
+                    "ch57x-keyboard-tool will configure it. Porting this to "
+                    "Windows and macOS means swapping one module, and it's on "
+                    "the roadmap."])
+
     warnings = [w for w in (_keyd_warning() if keyd else None,) if w]
     everything = proto.find_devices()
     found = [d for d in everything if d["pid"] == PID]
@@ -580,7 +598,7 @@ def diagnose(keyd=True):
         dev = Device(path=other["path"], report_id=other["report_id"],
                      writable=other["writable"], name=other.get("name", ""),
                      vid=other["vid"], pid=other["pid"])
-        return Diagnosis(
+        d = Diagnosis(
             "unsupported",
             f"Found a {other['vid']}:{other['pid']} pad, which isn't one this "
             "app knows.",
@@ -591,6 +609,14 @@ def diagnose(keyd=True):
                     "and if the pad doesn't answer properly nothing else "
                     "happens."],
             warnings=warnings)
+        if not dev.writable:
+            d.detail = ["This pad isn't readable yet. An older permission rule "
+                        "may name a single product id; this one covers every "
+                        "pad from the same maker.",
+                        "Run these, then unplug the pad and plug it back in."]
+            d.fix = [f"echo '{RULE_LINE}' | sudo tee /etc/udev/rules.d/{SUGGESTED_RULE}",
+                     "sudo udevadm control --reload-rules && sudo udevadm trigger"]
+        return d
 
     if not found:
         if _on_usb_bus():

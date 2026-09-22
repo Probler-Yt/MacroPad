@@ -98,6 +98,8 @@ The part that matters is **`1189:8840`**. Ignore "Acer": these pads borrow that 
 | 📖 **Reads your pad** | Opens and asks the pad what it's actually holding, so you start from the truth. |
 | 🔎 **Identifies unknown pads** | Asks an unrecognised pad about itself, read only, and refuses to write if it doesn't answer properly. |
 | 📐 **Layout editor** | Drag the keys around until the drawing matches your pad. |
+| 🎨 **Themes** | Seven, including an engineering blueprint and a pencil sketch. |
+| 🚀 **Actions** | Make a key open a web page, launch an app, type a phrase or run a command. Optional. |
 | 🧠 **Remembers what it wrote** | Keeps its own notes too, and marks anything it isn't sure about rather than guessing. |
 | 🩺 **Tells you what's wrong** | Unplugged? No permission? Wrong pad? You get a plain explanation and the exact fix, with a copy button. |
 | 📥 **Imports from the vendor app** | Set your pad up on Windows before? Bring that setup across. |
@@ -129,6 +131,7 @@ Both write straight to the pad's own memory, so you can even use both. Pick whic
 | Mouse actions, LED modes, extra layers | Not yet | Yes |
 | Record a shortcut by pressing it | Yes | No |
 | Read what's on the pad | Yes | No |
+| Open web pages, apps, commands, type text | Yes, optional | No |
 | Install and permissions | One line does both | AUR, a download or `cargo install`; rule by hand |
 
 **Short version:** new to Linux, or just want to click things? MacroPad. Want every feature, a different pad, or a config file you can keep in git? ch57x-keyboard-tool.
@@ -260,9 +263,38 @@ The bottom bar tells you exactly what happened. Green means it worked.
 
 ### 4. Press the key
 
-**Your bindings live on the pad itself**, so they keep working after a reboot, on another computer, even on Windows. Nothing stays running in the background, and you can close the app.
+**Your bindings live on the pad itself**, so they keep working after a reboot, on another computer, even on Windows. Nothing stays running in the background, and you can close the app. (The one exception is [actions](#-make-a-key-open-a-web-page-an-app-type-text-or-run-a-command), which are opt in.)
 
 ---
+
+## 🚀 Make a key open a web page, an app, type text, or run a command
+
+The pad itself can only ever send key presses. It can't hold "open this website". But your computer can, so an action is split in two:
+
+- **On the pad**, the key is set to one of **F13 to F24**. No keyboard you own has those, so nothing else reacts to them.
+- **On your computer**, a small listener watches for them and does what you asked.
+
+Click a key, choose **Action**, then pick **Web page**, **App** (from the apps you have installed), **Command**, or **Text**, and write it to the pad. **Test** runs it straight away so you can check it before relying on it.
+
+<p align="center">
+  <img src="docs/images/action.png" width="820" alt="Key 5 set to open a web page, with background actions switched on">
+</p>
+
+Then tick **Run actions in the background**. That starts the listener now and every time you log in. It runs as you, inside your desktop session, so web pages open in your own browser and apps start the way they would from your menu.
+
+A few things worth knowing:
+
+- **It's optional.** With it off, action keys send F13 to F24 and nothing happens. Every other key on the pad carries on working, because those live on the pad.
+- **Changing what an action does doesn't touch the pad.** The key keeps its F13 to F24 code; only the computer's half changes.
+- **You choose the key, or let it choose.** The **Sends** box shows all twelve, which ones other controls already use, and which ones your desktop is known to act on. Left on automatic, it tries the quiet ones first.
+- **Twelve at most**, one per spare key. Plenty for a 12 key pad.
+- **Text types a phrase wherever your cursor is**: a sign-off, an address, a reply you send twenty times a day. It can be several lines, and emoji and symbols like £ work on any keyboard layout, because it goes through the clipboard and then presses paste. That does mean it replaces whatever you'd copied. Terminals paste with Ctrl+Shift+V, so there's a tick box for that.
+- **Commands run as you, in a shell.** Anything you could type in a terminal works, including scripts. Actions are kept in `~/.config/macropad/actions.json`, so treat that file like a script and don't paste in one from someone you don't trust.
+- **No extra permissions.** The listener reads the pad through the same access the rest of the app already has.
+
+Text needs two things the other actions don't: **wl-clipboard** (or xclip on X11) to set the clipboard, and permission to press the paste shortcut for you, which is the same rule Steam installs for its controllers. If either is missing, the Text page says so and gives you the commands to fix it.
+
+The idea of pairing F13 to F24 with a listener comes from [armas01's macropad-controller](https://github.com/armas01/macropad/tree/main/macropad-controller), which does this for the 3 and 6 key pads.
 
 ## 🎛️ The knobs
 
@@ -292,6 +324,32 @@ The boxes along the bottom set the grid size and how many keys and knobs there a
 </p>
 
 This only changes the picture. It never writes anything to the pad. It's there because the pad reports how many keys it has but not how they're arranged, so on a pad we haven't seen before the first guess can be wrong.
+
+## 🎨 Themes
+
+Seven of them, under **Theme** at the bottom of the window. The choice sticks.
+
+<p align="center">
+  <img src="docs/images/themes.png" width="860" alt="The same pad drawn in all seven themes: Silkscreen, White board, Blueprint, Sketch, Nord, Catppuccin Mocha and Catppuccin Latte">
+</p>
+
+- **Silkscreen**, the default: a dark circuit board with white printed legends and Kapton tape for unwritten changes.
+- **White board**: the same, on a white board, for anyone who wants a light theme.
+- **Nord**, **Catppuccin Mocha** and **Catppuccin Latte**: the popular palettes, as their authors published them.
+
+Two do more than change colour.
+
+**Blueprint** draws the pad as an engineering drawing. White linework on cyanotype blue, over a drawing grid. Unknown keys become dashed hidden lines, the way drawings show edges you can't see. Chain lines cross each knob's centre. Lettering is in capitals, changes are marked up in yellow, and the sheet has a border and a proper title block with the drawing number, scale, layout, and your username as the draughtsman.
+
+<p align="center">
+  <img src="docs/images/theme-blueprint.png" width="820" alt="The Blueprint theme: the pad as a white-line engineering drawing on blue grid paper, with a title block in the corner">
+</p>
+
+**Sketch** is pencil on paper. Every line wanders slightly and is gone over twice, the way a hand draws, and unknown keys are shaded in. The wobble is seeded per key, so each one looks the same every time rather than shimmering as you move the mouse.
+
+<p align="center">
+  <img src="docs/images/theme-sketch.png" width="820" alt="The Sketch theme: the pad drawn in pencil on off-white paper with handwritten labels">
+</p>
 
 ## 🔄 Rotate view
 
@@ -376,6 +434,28 @@ You have a sibling pad with a different layout. The app refuses to write to it o
 
 The pad dropped off USB partway through a write, which can happen with a loose cable or a busy hub. Unplug it, plug it back in, and click **Write to pad** again. That key shows as Unknown until you do.
 
+### An action key does nothing
+
+Check **Run actions in the background** is ticked, and that the status under it says it's running. If it is and the key still does nothing, run this in a terminal and press the key:
+
+```
+macropad actions --debug
+```
+
+It prints every report the pad's keyboard sends. If nothing appears, the listener can't see the pad; if something appears but no action runs, the output says which key arrived, which narrows it down. Stop it with `Ctrl+C` and open an issue with what it printed.
+
+### A text key doesn't type anything
+
+Select the key, open its Action page, and look under the text box. If something's missing it says what, with a **Copy fix** button; paste that into a terminal. The permission rule usually needs you to unplug the pad and plug it back in, or log out and back in, before it takes effect.
+
+If nothing's reported as missing, press **Test**, then click into a text box within three seconds. If Test types but the pad key doesn't, check background actions are running.
+
+### An action key also does something else
+
+Linux gives some of the spare keys a meaning of its own, so your desktop can react to them as well as MacroPad. On Plasma 6, **F13** opens System Settings, **F20** mutes the microphone and **F21** toggles the touchpad. **F22** and **F23** are touchpad on and off in the same table.
+
+The easy fix is to pick a different key in the **Sends** box and write it again; the automatic choice already avoids these. If you'd rather keep the key, you can remove its desktop shortcut instead: in System Settings, open **Keyboard**, then **Shortcuts**, search for what it does ("Mute Microphone", "Toggle Touchpad" and so on), and clear the shortcut.
+
 ### Record doesn't catch my shortcut
 
 Your desktop keeps some combos for itself (on Plasma, most `Meta` shortcuts), so no app ever sees them. Type it into the box instead, like `meta+ctrl+right`.
@@ -440,26 +520,32 @@ Siblings come in other sizes, and several share vendor ID `1189`. **They don't a
   <img src="docs/images/unsupported.png" width="820" alt="The app explaining that it found a 1189:8890 pad that it doesn't support yet">
 </p>
 
-### Detecting a pad automatically
+### Start here: ask the pad
 
-If MacroPad sees a pad it doesn't recognise, it offers to **ask the pad what it is**. That's read only, and it needs the pad to pass two tests before the app will write anything to it:
-
-1. It answers the `0xFB` query with a sensible key and knob count.
-2. It then reports a full layer, describing exactly the control slots that count implies.
-
-A pad from a different family fails one of those, and the app leaves it alone rather than guessing. On the command line:
+Install MacroPad, plug your pad in, and run:
 
 ```
 macropad detect
 ```
 
-The pad reports how many keys and knobs it has, but not how they're arranged, so the app's first guess at rows and columns may be wrong. Check the drawing against the real thing.
+On most pads in this family that's the whole job. It asks the pad how many keys and knobs it has, reads back what's currently bound, and prints a report. Paste that into [an issue](https://github.com/Probler-Yt/MacroPad/issues) and your pad gets added to the known list.
 
-If your pad passes, please [open an issue](https://github.com/Probler-Yt/MacroPad/issues) with the output so it can be added to the known list and everyone else gets it working first time.
+The app offers the same thing: when it sees a pad it doesn't recognise, the panel has an **Ask the pad what it is** button.
 
-### Adding one by hand
+### How it decides
 
-If you'd like your pad in MacroPad too, you're exactly who this project needs. It's the same process used for this one. You'll need the vendor software (`MINI_KEYBOARD.exe`) and Wine.
+Detection is read only, and the pad has to pass two tests before the app will write anything to it:
+
+1. It answers the `0xFB` query with a sensible key and knob count.
+2. It then reports a full layer, describing exactly the control slots that count implies.
+
+A pad from a different family fails one of those, and the app leaves it alone rather than guessing.
+
+The pad reports how many keys and knobs it has, but not how they're arranged, so the first guess at rows and columns may be wrong. Fix it with [Edit layout](#-if-the-drawing-doesnt-match-your-pad) and the drawing will match your hardware.
+
+### If it doesn't answer
+
+Some pads in this family speak an older protocol and won't answer. Working those out needs a capture of the vendor software, the same process used for this one. You'll need `MINI_KEYBOARD.exe` and Wine.
 
 #### Capture what the vendor software sends
 
@@ -491,6 +577,8 @@ If you'd like your pad in MacroPad too, you're exactly who this project needs. I
 ## 🪟 What about Windows?
 
 Windows already has the vendor app, ugly as it is, and [ch57x-keyboard-tool](https://github.com/kriomant/ch57x-keyboard-tool) runs there too. **A friendly app on Linux was the gap, so Linux comes first.**
+
+To be precise about what "Linux only" means here: the window is Qt and runs anywhere, and the protocol module is plain Python. The only Linux specific parts are finding the pad and opening it, which read `/sys/class/hidraw` and `/dev/hidraw`. Swapping those for a cross platform HID library is the whole port. If you run it on Windows today it opens and tells you it can't see any devices.
 
 That said, the app is built on Qt, which runs on Windows and macOS too. The only Linux specific parts are the small pieces that talk to USB and check permissions. Swapping it for a cross platform one is on the [roadmap](#-roadmap), and once that's tested on real hardware, one app will work everywhere. If you'd like to help test on Windows, open an issue.
 
@@ -692,6 +780,8 @@ macropad.py              the protocol and the command line tool (no dependencies
 macropad_gui/
   core.py                bindings, the app's notes, the permission check, writing
   padview.py             the drawing of the pad
+  themes.py              palettes and drawing styles
+  fonts/                 the Sketch theme's handwriting font, with its licence
   app.py                 the window
   keymap.py              physical key to HID name, for Record
 macropad-probe.py        read only: what is this device?
@@ -720,6 +810,9 @@ tests/                   real captures and the tests that replay them
 - [ ] **Windows and macOS** via a cross platform USB layer
 - [x] Detecting a pad's key and knob counts by asking it
 - [x] A layout editor, since the pad doesn't report how its keys are arranged
+- [x] Actions: open web pages, apps and commands from a key
+- [x] Text snippets: type a phrase from a key
+- [x] Themes, including Blueprint and Sketch
 - [ ] **More pads**: every report sent in gets us closer
 
 ---
@@ -728,6 +821,8 @@ tests/                   real captures and the tests that replay them
 
 - **[kriomant/ch57x-keyboard-tool](https://github.com/kriomant/ch57x-keyboard-tool)**, the MIT licensed command line tool that has supported these pads since 2023. It does more than MacroPad does today (layers, sequences, mouse, LEDs, more pads, every OS), and its source is the best reference there is. Go give it a star.
 - **[rOzzy1987/MacroPad](https://github.com/rOzzy1987/MacroPad)**, whose Windows project this app's protocol code started from.
+- **[armas01/macropad](https://github.com/armas01/macropad)**, whose macropad-controller showed the F13 to F24 approach to actions.
+- **[Nord](https://www.nordtheme.com)** and **[Catppuccin](https://catppuccin.com)** for their palettes (both MIT), and Kimberly Geswein for **Architects Daughter**, the Sketch theme's handwriting, under the SIL Open Font License (`macropad_gui/fonts/OFL.txt`).
 - Everyone on forums who documented running a whole VM to change a key. Your suffering was noted.
 
 ## ⚖️ Licence

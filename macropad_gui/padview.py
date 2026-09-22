@@ -11,21 +11,86 @@ Visual states:
 """
 
 import math
+import random
+import zlib
 from dataclasses import dataclass
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (QColor, QFont, QFontDatabase, QFontMetricsF,
                            QPainter, QPainterPath, QPen, QTransform)
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
-from . import core
+from . import core, themes
 
-WINDOW = QColor("#17191b")
-BOARD = QColor("#202326")
-INK = QColor("#d8d4cb")          # silkscreen white, slightly warm
-INK_DIM = QColor("#72767b")
-HATCH = QColor("#34383c")
-TAPE = QColor("#eb8a2f")          # Kapton orange
+THEME = themes.get(themes.DEFAULT)
+
+# The colours everything draws with. Switching theme changes these objects in
+# place, so every widget and module holding one follows along.
+WINDOW = QColor(THEME.window)
+BOARD = QColor(THEME.board)
+INK = QColor(THEME.ink)           # silkscreen white, slightly warm
+INK_DIM = QColor(THEME.ink_dim)
+HATCH = QColor(THEME.hatch)
+TAPE = QColor(THEME.accent)       # Kapton orange, in the default theme
+
+
+def apply_theme(theme):
+    global THEME
+    THEME = theme
+    for colour, value in ((WINDOW, theme.window), (BOARD, theme.board),
+                          (INK, theme.ink), (INK_DIM, theme.ink_dim),
+                          (HATCH, theme.hatch), (TAPE, theme.accent)):
+        colour.setRgba(QColor(value).rgba())
+
+
+_FAMILIES = None
+
+
+def _families():
+    global _FAMILIES
+    if _FAMILIES is None:
+        _FAMILIES = set(QFontDatabase.families())
+    return _FAMILIES
+
+
+def _seed(tag):
+    """A stable number for a name. Python's own hash() changes every run."""
+    return zlib.crc32(tag.encode())
+
+
+def _wobble_path(path, amount, seed, step=4.0):
+    """
+    A pencil version of a path. Resampled finely, then nudged sideways by
+    two slow waves with random phases, so the line wanders without jitter.
+    Seeded, so a key looks the same every time it's drawn.
+    """
+    rnd = random.Random(seed)
+    out = QPainterPath()
+    for poly in path.toSubpathPolygons():
+        pts = list(poly)
+        if len(pts) < 2:
+            continue
+        dense = []
+        for a, b in zip(pts, pts[1:]):
+            seg = QLineF(a, b)
+            n = max(1, int(seg.length() / step))
+            dense.extend(seg.pointAt(k / n) for k in range(n))
+        dense.append(pts[-1])
+        f1, f2 = rnd.uniform(0.035, 0.06), rnd.uniform(0.10, 0.16)
+        p1, p2 = rnd.uniform(0, math.tau), rnd.uniform(0, math.tau)
+        dist, moved = 0.0, []
+        for i, pt in enumerate(dense):
+            if i:
+                dist += QLineF(dense[i - 1], pt).length()
+            nxt, prv = dense[min(i + 1, len(dense) - 1)], dense[max(i - 1, 0)]
+            dx, dy = nxt.x() - prv.x(), nxt.y() - prv.y()
+            length = math.hypot(dx, dy) or 1.0
+            off = amount * (0.65 * math.sin(dist * f1 + p1) + 0.35 * math.sin(dist * f2 + p2))
+            moved.append(QPointF(pt.x() - dy / length * off, pt.y() + dx / length * off))
+        out.moveTo(moved[0])
+        for q in moved[1:]:
+            out.lineTo(q)
+    return out
 
 # Geometry in board units; the view scales it to fit.
 K, G, M = 96.0, 16.0, 30.0        # key size, gap, board margin
@@ -80,6 +145,7 @@ class PadView(QWidget):
         self.drag_at = None       # where the pointer is, in board units
         self.drop = None          # (row, col) it would land in
         self._wobble = 0
+        self._wobble_cache = {}
         self._wobbler = QTimer(self)
         self._wobbler.setInterval(130)
         self._wobbler.timeout.connect(self._tick)
@@ -127,6 +193,7 @@ class PadView(QWidget):
     # ------------------------------------------------------------ layout
 
     def _layout(self):
+        self._wobble_cache = {}
         self.keys = {}              # key -> QRectF
         self.dials = {}             # dial -> centre QPointF
         self.rows = {}              # dial action -> legend row QRectF
@@ -175,6 +242,8 @@ class PadView(QWidget):
     def _transform(self):
         pad = 24
         avail = QRectF(self.rect()).adjusted(pad, pad, -pad, -pad)
+        if THEME.title_block:                  # keep clear of the title block
+            avail.adjust(0, 0, 0, -92)
         s = min(avail.width() / self.board.width(),
                 avail.height() / self.board.height())
         s = max(0.4, min(s, 1.6))
@@ -297,17 +366,22 @@ class PadView(QWidget):
 
     # ------------------------------------------------------------ paint
 
+    # ------------------------------------------------------------ paint
+
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         p.fillRect(self.rect(), WINDOW)
+        if THEME.grid:
+            self._paint_grid(p)
         p.setTransform(self._transform())
 
         board = QPainterPath()
         board.addRoundedRect(self.board, 18, 18)
         p.fillPath(board, BOARD)
-        p.setPen(QPen(INK_DIM, 1.2))
-        p.drawPath(board)
+        # On themes where the pad is only an outline, draw that in full ink.
+        edge = INK if THEME.board == THEME.window else INK_DIM
+        self._stroke(p, board, QPen(edge, 1.2), "board")
 
         if self.editing:
             for spot, rect in self.cells.items():
@@ -326,7 +400,7 @@ class PadView(QWidget):
             p.save()
             if self.editing:
                 # a small alternating tilt, the way icons shake when movable
-                lean = 0.55 if (hash(key) + self._wobble) % 2 else -0.55
+                lean = 0.55 if (_seed(key) + self._wobble) % 2 else -0.55
                 p.translate(rect.center())
                 p.rotate(lean)
                 p.translate(-rect.center())
@@ -358,22 +432,167 @@ class PadView(QWidget):
         p.drawText(QRectF(M, self.board.bottom() - 34, 200, 16),
                    Qt.AlignLeft | Qt.AlignVCenter, self.device_id)
 
+        if THEME.title_block:
+            p.resetTransform()
+            self._paint_sheet(p)
+
+    # ------------------------------------------------------ theme drawing
+
+    def _stroke(self, p, path, pen, tag):
+        """
+        Draw an outline. On a pencil theme the line wanders a little and is
+        gone over a second time, lighter, the way a hand draws.
+        """
+        p.setBrush(Qt.NoBrush)
+        if not THEME.wobble:
+            p.setPen(pen)
+            p.drawPath(path)
+            return
+        p.setPen(pen)
+        p.drawPath(self._wobbled(path, THEME.wobble, tag))
+        again = QPen(pen)
+        c = QColor(pen.color())
+        c.setAlpha(int(c.alpha() * 0.45))
+        again.setColor(c)
+        again.setWidthF(max(0.6, pen.widthF() * 0.7))
+        p.setPen(again)
+        p.drawPath(self._wobbled(path, THEME.wobble * 0.8, tag + "'"))
+
+    def _wobbled(self, path, amount, tag):
+        # Paths are in board units, so they only change when the layout
+        # does; cache them rather than recompute on every hover.
+        b = path.boundingRect()
+        key = (tag, amount, round(b.x(), 1), round(b.y(), 1),
+               round(b.width(), 1), round(b.height(), 1))
+        got = self._wobble_cache.get(key)
+        if got is None:
+            got = self._wobble_cache[key] = _wobble_path(path, amount, _seed(tag))
+        return got
+
+    def _legend_font(self, px, roomy=True):
+        """roomy: there's space to spare, as on a keycap; not on a dial legend."""
+        if THEME.font and THEME.font in _families():
+            f = QFont(THEME.font)
+            f.setPixelSize(px + (2 if roomy else 0))   # handwriting reads small
+        elif THEME.mono_legends:
+            f = QFont(self.mono)
+            f.setPixelSize(px - 1)
+        else:
+            f = QFont(self.font())
+            f.setPixelSize(px)
+        return f
+
+    @staticmethod
+    def _lettering(text):
+        return text.upper() if THEME.caps else text
+
+    def _paint_grid(self, p):
+        """Drawing paper: fine lines, and a heavier one every fifth."""
+        r = self.rect()
+        fine, heavy = QColor(HATCH), QColor(HATCH)
+        fine.setAlpha(70)
+        heavy.setAlpha(150)
+        step = 20
+        for i, x in enumerate(range(0, r.width(), step)):
+            p.setPen(QPen(heavy if i % 5 == 0 else fine, 1))
+            p.drawLine(x, 0, x, r.height())
+        for i, y in enumerate(range(0, r.height(), step)):
+            p.setPen(QPen(heavy if i % 5 == 0 else fine, 1))
+            p.drawLine(0, y, r.width(), y)
+
+    def _paint_sheet(self, p):
+        """A drawing border and a title block in the bottom right corner."""
+        import getpass
+        sheet = QRectF(self.rect()).adjusted(8, 8, -9, -9)
+        p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(INK, 1.4))
+        p.drawRect(sheet)
+
+        w, h = min(330.0, sheet.width() - 20), 84.0
+        tb = QRectF(sheet.right() - w, sheet.bottom() - h, w, h)
+        p.fillRect(tb, WINDOW)
+        p.setPen(QPen(INK, 1.2))
+        p.drawRect(tb)
+        row = h / 3
+        half = tb.left() + w / 2
+        p.setPen(QPen(INK, 0.8))
+        p.drawLine(QPointF(tb.left(), tb.top() + row), QPointF(tb.right(), tb.top() + row))
+        p.drawLine(QPointF(tb.left(), tb.top() + 2 * row), QPointF(tb.right(), tb.top() + 2 * row))
+        p.drawLine(QPointF(half, tb.top() + row), QPointF(half, tb.bottom()))
+
+        try:
+            who = getpass.getuser()
+        except Exception:
+            who = ""
+        lay = self.layout
+        knobs = f", {lay.knobs} KNOB{'S' if lay.knobs != 1 else ''}" if lay.knobs else ""
+        cells = [
+            (QRectF(tb.left(), tb.top(), w, row), "TITLE", "MACROPAD"),
+            (QRectF(tb.left(), tb.top() + row, w / 2, row), "DWG NO", self.device_id),
+            (QRectF(half, tb.top() + row, w / 2, row), "SCALE", "1:1   SHEET 1 OF 1"),
+            (QRectF(tb.left(), tb.top() + 2 * row, w / 2, row), "DRAWN", who.upper()),
+            (QRectF(half, tb.top() + 2 * row, w / 2, row), "LAYOUT",
+             f"{lay.rows}X{lay.cols}{knobs}"),
+        ]
+        small, big = QFont(self.mono), QFont(self.mono)
+        small.setPixelSize(7)
+        big.setPixelSize(11)
+        big.setBold(True)
+        for rect, label, value in cells:
+            p.setFont(small)
+            p.setPen(INK_DIM)
+            p.drawText(rect.adjusted(5, 2, -4, 0), Qt.AlignLeft | Qt.AlignTop, label)
+            p.setFont(big)
+            p.setPen(INK)
+            p.drawText(rect.adjusted(5, 0, -4, -3), Qt.AlignLeft | Qt.AlignBottom,
+                       QFontMetricsF(big).elidedText(value, Qt.ElideRight,
+                                                     rect.width() - 10))
+
+    def _centre_lines(self, p, c):
+        """Chain lines through a round feature's centre: long dash, short dash."""
+        pen = QPen(INK_DIM, 0.8)
+        pen.setDashPattern([14, 3, 3, 3])
+        p.setPen(pen)
+        reach = R_OUT + 10
+        p.drawLine(QPointF(c.x() - reach, c.y()), QPointF(c.x() + reach, c.y()))
+        p.drawLine(QPointF(c.x(), c.y() - reach), QPointF(c.x(), c.y() + reach))
+
+    # ------------------------------------------------------------ pieces
+
     def _outline_pen(self, control, known):
         if control == self.current:
             return QPen(TAPE, 2.2)
         if control == self.hover:
             return QPen(INK, 1.6)
-        return QPen(INK if known else INK_DIM, 1.1)
+        pen = QPen(INK if known else INK_DIM, 1.1)
+        if not known and THEME.unknown == "hidden":
+            pen.setDashPattern([5, 3])          # hidden line, drawing convention
+        return pen
 
-    def _hatch(self, p, path, rect, step=9.0):
+    def _unknown_fill(self, p, path, rect, tag, step=9.0):
+        if THEME.unknown == "hatch":
+            self._hatch(p, path, rect, tag, step)
+
+    def _hatch(self, p, path, rect, tag="", step=9.0):
         p.save()
         p.setClipPath(path)
-        p.setPen(QPen(HATCH, 1.4))
+        pen = QPen(HATCH, 1.4)
         x = rect.left() - rect.height()
+        i = 0
         while x < rect.right():
-            p.drawLine(QPointF(x, rect.bottom()),
-                       QPointF(x + rect.height(), rect.top()))
+            a = QPointF(x, rect.bottom())
+            b = QPointF(x + rect.height(), rect.top())
+            if THEME.wobble:
+                line = QPainterPath(a)
+                line.lineTo(b)
+                p.setPen(pen)
+                p.setBrush(Qt.NoBrush)
+                p.drawPath(self._wobbled(line, THEME.wobble * 0.6, f"{tag}h{i}"))
+            else:
+                p.setPen(pen)
+                p.drawLine(a, b)
             x += step
+            i += 1
         p.restore()
 
     def _tape(self, p, at, length=30.0, width=9.0):
@@ -392,11 +611,10 @@ class PadView(QWidget):
         look = self.looks.get(key, Look())
         path = QPainterPath()
         path.addRoundedRect(rect, 5, 5)
-        if not look.known and not look.pending:
-            self._hatch(p, path, rect)
-        p.setBrush(Qt.NoBrush)
-        p.setPen(self._outline_pen(key, look.known or look.pending))
-        p.drawPath(path)
+        unknown = not look.known and not look.pending
+        if unknown:
+            self._unknown_fill(p, path, rect, key)
+        self._stroke(p, path, self._outline_pen(key, look.known or look.pending), key)
 
         f = QFont(self.mono)
         f.setPixelSize(10)
@@ -405,14 +623,13 @@ class PadView(QWidget):
         p.drawText(rect.adjusted(8, 6, -8, -6), Qt.AlignLeft | Qt.AlignTop,
                    f"0x{core.action_byte(key):02x}")
 
-        f = QFont(self.font())
-        f.setPixelSize(13)
+        f = self._legend_font(13)
         p.setFont(f)
         if look.pending:
             p.setPen(TAPE)
         else:
             p.setPen(INK if look.known and not look.quiet else INK_DIM)
-        text = look.text if (look.known or look.pending) else "Unknown"
+        text = self._lettering(look.text if (look.known or look.pending) else "Unknown")
         body = rect.adjusted(8, 22, -8, -10)
         # Let 'Meta+Ctrl+Left' break after a '+' instead of being cut off.
         text = text.replace("+", "+\u200b")
@@ -442,6 +659,8 @@ class PadView(QWidget):
                                     tip.y() - 3.5 * math.sin(a)))
 
     def _paint_dial(self, p, dial, c):
+        if THEME.centre_lines:
+            self._centre_lines(p, c)
         # Ring segments for turn left / turn right, centre for press.
         for act in core.DIAL_ACTIONS:
             control = f"{dial}-{act}"
@@ -449,44 +668,41 @@ class PadView(QWidget):
             seg = self._segment(dial, act)
             if act != "push":
                 if not look.known and not look.pending:
-                    self._hatch(p, seg, seg.boundingRect(), 7.0)
+                    self._unknown_fill(p, seg, seg.boundingRect(), control, 7.0)
                 if control == self.current:
                     fill = QColor(TAPE)
                     fill.setAlpha(55)
                     p.fillPath(seg, fill)
-                p.setPen(self._outline_pen(control, look.known or look.pending))
-                p.setBrush(Qt.NoBrush)
-                p.drawPath(seg)
+                self._stroke(p, seg, self._outline_pen(control, look.known or look.pending),
+                             control)
 
         push = f"{dial}-push"
         look = self.looks.get(push, Look())
         knob = QPainterPath()
         knob.addEllipse(c, R_KNOB, R_KNOB)
         if not look.known and not look.pending:
-            self._hatch(p, knob, knob.boundingRect(), 7.0)
+            self._unknown_fill(p, knob, knob.boundingRect(), push, 7.0)
         if push == self.current:
             fill = QColor(TAPE)
             fill.setAlpha(55)
             p.fillPath(knob, fill)
-        p.setPen(self._outline_pen(push, look.known or look.pending))
-        p.setBrush(Qt.NoBrush)
-        p.drawPath(knob)
+        self._stroke(p, knob, self._outline_pen(push, look.known or look.pending), push)
         # knurling, the way a footprint marks a rotary encoder
-        p.setPen(QPen(INK_DIM, 1.0))
-        for i in range(24):
-            a = math.radians(i * 15)
-            p.drawLine(QPointF(c.x() + (R_KNOB - 4) * math.cos(a), c.y() + (R_KNOB - 4) * math.sin(a)),
-                       QPointF(c.x() + (R_KNOB - 1) * math.cos(a), c.y() + (R_KNOB - 1) * math.sin(a)))
+        if not THEME.wobble:
+            p.setPen(QPen(INK_DIM, 1.0))
+            for i in range(24):
+                a = math.radians(i * 15)
+                p.drawLine(QPointF(c.x() + (R_KNOB - 4) * math.cos(a), c.y() + (R_KNOB - 4) * math.sin(a)),
+                           QPointF(c.x() + (R_KNOB - 1) * math.cos(a), c.y() + (R_KNOB - 1) * math.sin(a)))
 
-        f = QFont(self.font())
-        f.setPixelSize(11)
+        f = self._legend_font(11)
         p.setFont(f)
-        label = QRectF(c.x() - 21, c.y() - 8, 42, 16)
+        label = QRectF(c.x() - 23, c.y() - 8, 46, 16)
         p.setPen(Qt.NoPen)
         p.setBrush(BOARD)
         p.drawRoundedRect(label, 3, 3)
         p.setPen(TAPE if push == self.current else INK_DIM)
-        p.drawText(label, Qt.AlignCenter, f"Dial {dial[4:]}")
+        p.drawText(label, Qt.AlignCenter, self._lettering(f"Dial {dial[4:]}"))
 
         # Legend rows: the silkscreen text next to the part.
         for act in core.DIAL_ACTIONS:
@@ -519,12 +735,11 @@ class PadView(QWidget):
         p.drawText(rect.adjusted(0, 0, -4, 0), Qt.AlignRight | Qt.AlignVCenter,
                    f"{core.action_byte(control):02x}")
 
-        f = QFont(self.font())
-        f.setPixelSize(12)
+        f = self._legend_font(12, roomy=False)
         p.setFont(f)
         p.setPen(TAPE if look.pending else
                  (INK if look.known and not look.quiet else INK_DIM))
-        text = look.text if (look.known or look.pending) else "Unknown"
+        text = self._lettering(look.text if (look.known or look.pending) else "Unknown")
         body = rect.adjusted(22, 0, -26, 0)
         p.drawText(body, Qt.AlignLeft | Qt.AlignVCenter,
                    QFontMetricsF(f).elidedText(text, Qt.ElideRight, body.width()))

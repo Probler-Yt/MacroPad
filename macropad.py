@@ -62,6 +62,8 @@ KEYCODES.update({
 })
 for _i in range(1, 13):
     KEYCODES[f"f{_i}"] = 57 + _i          # F1 = 58 .. F12 = 69
+for _i in range(13, 25):
+    KEYCODES[f"f{_i}"] = 0x68 + _i - 13   # F13 = 0x68 .. F24 = 0x73
 
 # Media keys live on the Consumer usage page, sent as a 16-bit value.
 MEDIA_KEYS = {
@@ -247,9 +249,15 @@ LAYERS = 3
 
 
 def native_info(report_id):
-    """Ask the pad what it is. Reply carries the key and knob counts."""
+    """
+    Ask the pad what it is. Reply carries the key and knob counts.
+
+    The vendor sends the command byte three times over. In the read command
+    below the bytes after the first carry meaning, so these may too; we
+    repeat them rather than guess that they are padding.
+    """
     data = bytearray(REPORT_LEN - 1)
-    data[0] = MAGIC_INFO
+    data[0] = data[1] = data[2] = MAGIC_INFO
     return bytes([report_id]) + bytes(data)
 
 
