@@ -768,23 +768,26 @@ class PadView(QWidget):
         """A filled tile with an asterisk on it, for a knob row."""
         box = QRectF(at.x() - size / 2, at.y() - size / 2, size, size)
         self._flag_shape(p, box, THEME.badge_glyph or "*", QColor(TAPE),
-                         QColor(THEME.accent_text))
+                         QColor(THEME.accent_text), glow=True)
 
-    def _corner_flag(self, p, rect, glyph, fill, pen_colour, italic=False):
+    def _corner_flag(self, p, rect, glyph, fill, pen_colour, italic=False, glow=False):
         """
         The tab tucked into a key's top right corner: square, with only the
         inner corner rounded, so it reads as folded into the tile.
         """
         size = min(BADGE, rect.width() * 0.26)
-        box = QRectF(rect.right() - size - KEY_R * 0.35,
-                     rect.top() + KEY_R * 0.18, size, size)
-        self._flag_shape(p, box, glyph, fill, pen_colour, italic)
+        posOffset = 0.05 # Slightly offset from the edges for DPI scaling edge cases, despite now being drawn between the button background and border. -Oaken
+        box = QRectF(rect.right() - size - KEY_R * posOffset,
+                     rect.top() + KEY_R * posOffset, size, size)
+        self._flag_shape(p, box, glyph, fill, pen_colour, italic, glow)
 
-    def _flag_shape(self, p, box, glyph, fill, pen_colour, italic=False):
+    def _flag_shape(self, p, box, glyph, fill, pen_colour, italic=False, glow=False):
         p.save()
         r = box.width() * 0.28
         # square against the tile's own corner, rounded on the two inner ones
-        path = self._corner_path(box, tl=r, tr=0.0, br=r, bl=0.0)
+        path = self._corner_path(box, tl=0.0, tr=r, br=0.0, bl=r) # I screwed up the figma file, the rect is rotated -90deg. Opposite corners need to be rounded. -Oaken
+        if glow:
+            self._glow(p, path, TAPE)
         p.setPen(Qt.NoPen)
         p.setBrush(fill)
         p.drawPath(path)
@@ -795,8 +798,8 @@ class PadView(QWidget):
         p.setFont(f)
         p.setPen(pen_colour)
         # the asterisk sits high in the em box; nudge it back to the middle
-        lift = box.height() * (0.18 if glyph == "*" else 0.0)
-        p.drawText(box.translated(0, lift), Qt.AlignCenter, glyph)
+        #lift = box.height() * (0.18 if glyph == "*" else 0.0) # This is no longer needed after fixing the corner rounding. -Oaken
+        p.drawText(box.translated(0, 0), Qt.AlignCenter, glyph)
         p.restore()
 
     def _paint_key(self, p, key, rect):
@@ -808,8 +811,17 @@ class PadView(QWidget):
             p.fillPath(path, self._well_brush(rect))
         if unknown:
             self._unknown_fill(p, path, rect, key)
-        if key == self.current or look.pending:
+        if key == self.current: # if key == self.current or look.pending:
             self._glow(p, path, TAPE)
+        if look.pending: # Move this so it draws after the button background, but before the border is drawn. -Oaken
+            if THEME.badge == "star":
+                self._corner_flag(p, rect, THEME.badge_glyph or "*",
+                                  QColor(TAPE), QColor(THEME.accent_text), glow=True)
+            else:
+                self._tape(p, QPointF(rect.right() - 7, rect.top() + 7))
+        elif unknown and THEME.query_badge:
+            self._corner_flag(p, rect, "?", QColor(THEME.hatch), INK_DIM,
+                              italic=True)
         self._stroke(p, path, self._outline_pen(key, look.known or look.pending), key)
 
         f = QFont(self.mono)
@@ -846,16 +858,6 @@ class PadView(QWidget):
         text = text.replace("+", "+\u200b")
         p.drawText(body, Qt.AlignCenter | Qt.TextWordWrap,
                    self._fit(text, f, body))
-
-        if look.pending:
-            if THEME.badge == "star":
-                self._corner_flag(p, rect, THEME.badge_glyph or "*",
-                                  QColor(TAPE), QColor(THEME.accent_text))
-            else:
-                self._tape(p, QPointF(rect.right() - 7, rect.top() + 7))
-        elif unknown and THEME.query_badge:
-            self._corner_flag(p, rect, "?", QColor(THEME.hatch), INK_DIM,
-                              italic=True)
 
     def _paint_turn_icon(self, p, centre, clockwise, colour):
         r = 5.5
@@ -1022,8 +1024,8 @@ class PadView(QWidget):
             p.setBrush(glow)
             p.drawPath(path)
 
-        colour = (QColor(TAPE) if (look.pending or is_cur)
-                  else (INK if look.known and not look.quiet else INK_DIM))
+        colour = (QColor(TAPE) if is_cur
+                  else (INK if look.known or look.pending and not look.quiet else INK_DIM)) # Set pending text to white to differentiate between selected and pending. -Oaken
         icon_c = QPointF(rect.left() + RULE_X / 2, rect.center().y())
         if act == "push":
             p.setPen(Qt.NoPen)

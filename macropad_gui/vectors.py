@@ -5,6 +5,8 @@ centre, so the shape survives any scaling. The clockwise arc is this
 same outline mirrored in x.
 """
 
+# :D -Oaken
+
 KNOB_ARC = (
     ("M", (-0.48235, -1.28433)),
     ("C", (-0.47805, -1.30123, -0.49448, -1.31592, -0.51064, -1.30935)),

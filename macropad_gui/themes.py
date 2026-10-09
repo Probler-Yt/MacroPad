@@ -149,8 +149,10 @@ LATTE = Theme(
 # Designed in Figma by a member of the community. The palette is Silkscreen's
 # own window and board with a hotter orange and neutral rather than warm greys,
 # so what makes it its own theme is mostly the drawing switches below.
-# Scale factor from the Figma file: its key tile is 291.67 units, ours is 96.
-_F = 96.0 / 291.67
+
+# :D -Oaken
+
+_F = 96.0 / 291.67 # Scale factor from the Figma file: its key tile is 291.67 units, ours is 96.
 
 KNOBS_NORTH = Theme(
     "knobs-north", "Knobs North", True,
@@ -160,9 +162,9 @@ KNOBS_NORTH = Theme(
     badge="star", badge_glyph="*", legend_box=True, query_badge=True,
     byte_prefix=True, byte_ink="#505050",
     # tile and knob gradients, both #202326 falling to #131619 in the file
-    well="#131619", glow=3.2, knob_art="figma",
+    well="#131619", glow=35 * _F, knob_art="figma", # "glow" value here was set way too low, making it not visible. Fixed. -Oaken
     font="Harmattan", mono_font="JetBrains Mono NL", ui_font="Harmattan",
-    button_radius=7, pill_buttons=True, outline_primary=True, ui_pt=15,
+    button_radius=7, pill_buttons=True, outline_primary=True, ui_pt=18, # ui_pt=15 was a little small, bumping slightly to 18pt. -Oaken
     title_pt=28, mono_status=True,
     metrics=Metrics(
         key=96.0,
@@ -172,16 +174,18 @@ KNOBS_NORTH = Theme(
         row_h=75.0 * _F, row_gap=40.0 * _F, row_sep=2.0 * _F,
         dial_w=512.0 * _F, legend_radius=15.0 * _F,
         rule_x=73.0 * _F, label_x=94.0 * _F,
-        byte_pt=24.0 * _F, label_pt=40.0 * _F,
+        byte_pt=24.0 * _F, label_pt=55.0 * _F,
         row_pt=40.0 * _F, row_byte_pt=20.0 * _F,
         badge=64.29 * _F,
         # The design sets line height to exactly the type size; Qt's is
         # looser, so the band is taller than the design's 100/300 while
         # staying centred on the same line.
-        label_band=(38 / 300, 0.18, 37 / 300, 0.18),
+
+        # Values changed to allow 2 lines to render per key with increased font size. Elipsis will show on second line instead of a third line. -Oaken
+        label_band=(38 / 300, 0.10, 37 / 300, 0.01), # label_band=(38 / 300, 0.18, 37 / 300, 0.18) <-- old
         byte_inset=(19 / 300, 10 / 300)),
     notes=("Designed in Figma by a member of the community.",
-           "Knobs along the top. Use Rotate view if the drawing is sideways."))
+           "Knobs along the top. North. Or east if you rotate...")) # Small tweak -Oaken
 
 # --------------------------------------------------------------- palettes
 #

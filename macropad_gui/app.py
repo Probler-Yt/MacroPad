@@ -36,9 +36,9 @@ def _status(t):
     """The footer's device line and its last message."""
     if t.mono_status:
         return (f'QLabel[role="status"] {{ color: {t.ink}; '
-                f'font-family: "{t.mono_font}"; font-size: 12px; }}\n'
+                f'font-family: "{t.mono_font}"; font-size: 12px; font-weight: 850;}}\n'
                 f'QLabel[role="message"] {{ font-family: "{t.mono_font}"; '
-                f'font-size: 12px; font-weight: 600; }}')
+                f'font-size: 12px; font-weight: 850; }}')
     return f'QLabel[role="status"] {{ color: {t.ink_dim}; }}'
 
 
@@ -47,8 +47,8 @@ def _primary(t, tint):
     if t.outline_primary:
         return f"""
 QPushButton[role="primary"] {{ background: {t.board}; color: {t.accent};
-              border: 1px solid {t.accent}; border-radius: {t.button_radius}px;
-              font-weight: 600; padding: 8px 16px; }}
+              border: 2px solid {t.accent}; border-radius: {t.button_radius}px;
+              font-weight: 600; padding: 2px 5px; }}
 QPushButton[role="primary"]:hover {{ background: {tint(t.board, t.accent, 0.12)}; }}
 QPushButton[role="primary"]:disabled {{ color: {tint(t.window, t.ink_dim, 0.7)};
               border-color: {tint(t.window, t.line, 0.7)}; }}"""
@@ -65,8 +65,8 @@ def _flat(t):
     if t.pill_buttons:
         return f"""
 QPushButton[role="flat"] {{ background: {t.board}; color: {t.ink};
-              border: 1px solid {t.ink_dim}; border-radius: {t.button_radius}px;
-              padding: 6px 14px; }}
+              border: 2px solid {t.ink_dim}; border-radius: {t.button_radius}px;
+              padding: 2px 5px; }}
 QPushButton[role="flat"]:hover {{ border-color: {t.ink}; }}
 QPushButton[role="flat"]:disabled {{ color: {t.ink_dim}; border-color: {t.line}; }}"""
     return f"""
@@ -120,6 +120,30 @@ QComboBox {{ background: {t.field}; border: 1px solid {t.line}; border-radius: 4
 QMenu {{ background: {t.field}; border: 1px solid {t.line}; padding: 4px; }}
 QMenu::item {{ padding: 6px 18px; }}
 QMenu::item:selected {{ background: {tint(t.field, t.accent, 0.25)}; }}
+
+QScrollBar:vertical {{
+    background: #00000000;
+    width: 12px;
+    margin: 0px 0px;
+}}
+QScrollBar::handle:vertical {{
+    background: {t.hatch};
+    border-radius: 6px;
+    margin: 3px 0px;
+}}
+QScrollBar::add-line:vertical {{
+    background: #00000000;
+    height: 0px;
+    subcontrol-position: bottom;
+    subcontrol-origin: margin;
+}}
+QScrollBar::sub-line:vertical {{
+    background: #00000000;
+    height: 0px;
+    subcontrol-position: top;
+    subcontrol-origin: margin;
+}}
+
 """
 
 
@@ -215,6 +239,7 @@ class Inspector(QWidget):
     def __init__(self):
         super().__init__()
         self.setFixedWidth(INSPECTOR_W)
+        #self.setFixedHeight(800) # This initial fix to stop window resizing caused issues with the new implementation of scroll bars. -Oaken
         self.control = None
         self._loading = False
         self.editing_layout = False
@@ -318,6 +343,7 @@ class Inspector(QWidget):
                 ml.addWidget(b, r, col)
         np_ = _label("Pressing or turning it will do nothing. Handy for a key "
                      "you keep hitting by accident.", "dim", wrap=True)
+        # action page
         ap = QWidget()
         al = QVBoxLayout(ap)
         al.setContentsMargins(0, 0, 0, 0)
